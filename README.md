@@ -1,157 +1,51 @@
 # Human Micro Activity Identification Using mmWave Sensors
 <img width="693" height="333" alt="fig_prototype_photos" src="https://github.com/user-attachments/assets/fcb05b5b-559a-4cd4-a8b8-2372ab6f796d" />
 
-## Project Overview
+## Overview
 
-This project focuses on identifying human micro-activities and transitional movements using advanced mmWave (millimeter-wave) radar sensors. Unlike traditional optical cameras, mmWave sensors provide a non-intrusive, privacy-preserving method for continuous activity monitoring.
+This project implements a highly stable, real-time Human Activity Recognition (HAR) system using an ESP32 and millimeter-wave radar. By processing spatial and kinematic data, the system detects and classifies human states—such as Walking, Standing, Sitting, and transitional movements—using an on-device machine learning pipeline. The system includes an integrated OLED display for real-time status, SD card data logging, and Bluetooth Low Energy (BLE) broadcasting.
+The intelligence of the system relies on a Random Forest classifier, fully contained within the rd03d_model.h file.
 
-By leveraging a dual-sensor approach (Ai-Thinker Rd-03d and DFRobot C4001) driven by an ESP32-S3 Pico, the system captures fine-grained spatial and velocity data. This repository includes the complete pipeline: from an automated data collection rig that logs to an SD card, to a real-time on-device Machine Learning deployment recognizing 8 distinct activities.
+## Radar Parameters
 
-🎯 Recognized Activities
+The predictive model continuously monitors sliding windows of data. It calculates statistical features (mean, variance, RMS, min, max, etc.) based on the following target parameters:
 
-The on-device Random Forest model is trained to classify the following 8 states in real-time (at 10 Hz):
+| Parameter | Description | Unit |
+| :--- | :--- | :--- |
+| **Distance** | Direct radial distance from the sensor to the tracked target. | mm |
+| **Velocity** | Speed of the target moving towards or away from the sensor. | cm/s |
+| **AoA** | Angle of Arrival / Azimuth angle of the tracked target. | Degrees (°) |
+| **X Coordinate** | Horizontal spatial position relative to the sensor's center. | mm |
+| **Y Coordinate** | Depth/forward spatial position relative to the sensor. | mm |
 
-NO PERSON (Empty room)
+## System Architecture & Pipeline
 
-ENTRY
+### Phase 1: Data Collection Setup
+Data was collected using a custom ESP32 recording firmware. The setup was designed to capture real-world human movements accurately and consistently.
+*   **Protocol:** Data was recorded in structured 10-minute sessions per activity. To avoid fatigue and ensure natural movement, the system utilized automated timing (5-second preparation pauses followed by 5-second active recording windows).
+*   **Storage:** Raw telemetry from the radar was logged directly to an onboard SD card in CSV format at a strict 10Hz sampling rate.
+*   **Labeling:** Participants explicitly selected their intended activity (1 through 8) via serial command before each session, ensuring perfectly labeled ground-truth datasets.
 
-EXIT
+### Phase 2: Data Preprocessing & Noise Clearing
+Raw mmWave radar data is inherently noisy and prone to hardware jitter. A rigorous noise-clearing and feature-extraction pipeline was implemented:
+*   **Ghost Rejection:** The system actively filters out "ghost" targets (anomalous radar reflections) by restricting valid data points to realistic physical boundaries (e.g., ignoring data where distance is `< 100mm` or `> 5000mm`).
+*   **Signal Smoothing (EMA):** An Exponential Moving Average (EMA) filter is applied to the raw distance and velocity streams to eliminate micro-jitter and hardware anomalies.
+*   **Windowing & Feature Extraction:** The smoothed data is buffered into a sliding 50-frame window (representing 5 seconds of historical data). From this buffer, the system calculates 8 statistical metrics per radar parameter (Mean, Median, Standard Deviation, Variance, RMS, Min, Max, Range).
+*   **Standardization:** The resulting feature array is normalized using a Standard Scaler (subtracting the mean and dividing by the scale) to ensure the machine learning model interprets all variables equally.
 
-STANDING
+### Phase 3: Model Training
+The preprocessed dataset was used to train a **Random Forest Classifier**. 
+*   The model evaluates a 41-feature array (40 spatial/kinematic statistics + 1 integer representing the previously predicted state for temporal context).
+*   Once trained and validated, the model was converted into a lightweight, edge-compatible C++ header file, represented verbatim in this repository as `rd03d_model.h`.
 
-SITTING
+### Phase 4: Edge Deployment & Inference
+The final deployment firmware runs completely standalone on the ESP32.
+*   **Multi-Core Processing:** FreeRTOS is utilized to pin the heavy ML inference task to Core 0, while the data collection, OLED rendering, and BLE broadcasting run smoothly on Core 1.
+*   **State Machine Backtracking:** To prevent the model from flickering between states, a strict kinematic state machine evaluates predictions. It uses hysteresis gating and backtracking to auto-correct past predictions based on new physical context (e.g., if the user is verified to be sitting, a recent anomalous "walking" prediction is retroactively corrected in the logs).
 
-WALKING
+## Hardware Notice: Discontinuation of C4001
 
-STAND TO SIT (Transitional)
+Initial data collection and system architectures were designed for sensor fusion using both the RD-03D and the DFRobot C4001 radar modules.
 
-SIT TO STAND (Transitional)
-
-🛠️ Hardware Setup & Pin Mapping
-
-The system is built on the ESP32-S3 Pico to handle dual I2C buses, hardware serial, and SPI concurrently.
-
-DFRobot C4001
-
-Interface: I2C (Bus 0)
-
-ESP32-S3 Pin: SDA: 6, SCL: 7
-
-Notes: Configured for eSpeedMode
-
-OLED (SH1106)
-
-Interface: I2C (Bus 1)
-
-ESP32-S3 Pin: SDA: 8, SCL: 9
-
-Notes: Address 0x3C, displays system state
-
-Ai-Thinker Rd-03d
-
-Interface: UART1
-
-ESP32-S3 Pin: RX: 4, TX: 5
-
-Notes: Baud 256000, single-target mode
-
-MicroSD Module
-
-Interface: SPI
-
-ESP32-S3 Pin: CS: 10, SCK: 12, MISO: 13, MOSI: 11
-
-Notes: For raw CSV data logging
-
-Power: The system runs independently on a rechargeable battery with an integrated power switch.
-
-🏗️ Software Architecture
-
-The project is split into two main phases, each with its own dedicated firmware:
-
-Phase 1: Automated Data Collection (datacollection.ino)
-
-Designed to gather high-quality training data without manual intervention.
-
-NTP Time Sync: Connects to WiFi to pull accurate GMT+5:30 timestamps.
-
-Automated State Machine: * Prep Phase: 10-second wait to allow the subject to get into posture.
-
-Collect Phase: 30-second continuous data collection at 20Hz (50ms interval). 
-
-Logging: Writes comprehensive CSV files (Projectmmwave_log.csv) directly to the SD card including distance, velocity, angle, spatial coordinates, and energy readings from both sensors.
-
-Phase 2: Real-Time Inference (Rupam1632mmdeploy.ino)
-
-Deploys the trained Random Forest classifier directly onto the ESP32-S3.
-
-Signal Processing: Uses an Exponential Moving Average (EMA, $\alpha=0.3$) to smooth live raw features and reduce sensor noise.
-
-Inference Engine: Utilizes the EloquentTinyML framework (RUPAM_model.h) to predict activities from 8 features at 10Hz.
-
-Latching Logic: Includes custom post-processing to confirm transitional states (e.g., verifying negative velocity for "STAND TO SIT") before updating the OLED.
-
-🚀 Getting Started
-
-Prerequisites
-
-Arduino IDE with the ESP32 board package installed.
-
-Required Arduino Libraries (Install via Library Manager):
-
-Adafruit GFX Library
-
-Adafruit_SH110X
-
-DFRobot_C4001 (Ensure this is in your src or libraries folder)
-
-SD and SPI (Built-in)
-
-Wire and HardwareSerial (Built-in)
-
-Installation & Deployment
-
-Clone this repository:
-
-git clone [https://github.com/yourusername/MicroActivity-mmWave.git](https://github.com/yourusername/MicroActivity-mmWave.git)
-
-
-For Data Collection:
-
-Open datacollection.ino.
-
-Update the WIFI_SSID and WIFI_PASS variables.
-
-Upload to the ESP32-S3 Pico, insert a formatted MicroSD card, and open the Serial Monitor (115200 baud).
-
-For ML Inference:
-
-Open Rupam1632mmdeploy.ino.
-
-Ensure RUPAM_model.h is in the same directory.
-
-Upload to the ESP32-S3 Pico. The OLED will immediately begin displaying real-time predictions.
-
-📊 Data Features for Machine Learning
-
-The model expects an 8-feature array representing a fused state of both sensors:
-
-rd_distance_mm (Rd-03d)
-
-rd_velocity_cm_s (Rd-03d)
-
-rd_angle_deg (Rd-03d)
-
-rd_x_mm (Rd-03d)
-
-rd_y_mm (Rd-03d)
-
-c4001_distance_m (C4001)
-
-c4001_velocity_m_s (C4001)
-
+However, the C4001 has been discontinued from the final inference pipeline due to severe channel interference when operating concurrently with the RD-03D. The system has been refactored, and the trained machine learning model (rd03d_model.h) is now successfully optimized to achieve high-accuracy predictions utilizing exclusively the 41 features extracted from the RD-03D.
 c4001_energy (C4001)
-
-📝 License
-
-This project is open-source. Feel free to fork, modify, and integrate into your own IoT / Smart Home projects!
