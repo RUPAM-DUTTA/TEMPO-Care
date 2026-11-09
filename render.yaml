@@ -5,7 +5,7 @@ services:
     name: tempo-care-ai-rupam            # public address: https://tempo-care-ai-rupam.onrender.com
     runtime: python
     plan: free
-    autoDeployTrigger: off
+    autoDeployTrigger: commit            # redeploy when this branch changes
     buildCommand: echo "server.py uses only the Python standard library"
     startCommand: python server.py --host 0.0.0.0
     healthCheckPath: /api/health

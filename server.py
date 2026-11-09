@@ -221,7 +221,12 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == "/api/health":
                 # Liveness only (no data), answered before the host check: hosting health checks use internal addresses.
-                self.send(200, {"ok": True, "provider": "hosted" if type(self.server.app.model).__name__ == "HostedModel" else "local"})
+                model = self.server.app.model
+                hosted = type(model).__name__ == "HostedModel"
+                info = {"ok": True, "provider": "hosted" if hosted else "local"}
+                if hosted:  # model names and HTTP status codes only, never keys or data
+                    info.update(model=model.model, last_error=model.last_error or None)
+                self.send(200, info)
                 return
             self.check_host()
             if path in STATIC_FILES:

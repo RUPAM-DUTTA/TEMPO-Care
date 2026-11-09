@@ -595,21 +595,49 @@ class HostedModel:
         if urlparse(self.url).scheme != "https":
             raise ValueError("GROQ_URL must be an https address.")
         self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+        # Tried in order when the main model rejects a request or is unavailable.
+        self.fallbacks = [m.strip() for m in os.getenv("GROQ_FALLBACK_MODELS", "llama-3.3-70b-versatile,llama-3.1-8b-instant").split(",")
+                          if m.strip() and m.strip() != self.model]
         self.timeout = int(os.getenv("GROQ_TIMEOUT", "60"))
+        self.last_error = ""
 
     def headers(self):
-        return {"Authorization": "Bearer " + self.key}
+        # An explicit client name: the API's firewall can refuse Python's default "Python-urllib" agent.
+        return {"Authorization": "Bearer " + self.key, "User-Agent": "TEMPO-Care/1.0", "Accept": "application/json"}
+
+    def call(self, path, body=None, timeout=None):
+        """Returns (json, None) or (None, (http_status, error_code, retry_after)). Never exposes response text."""
+        encoded = None if body is None else json.dumps(body).encode("utf-8")
+        request = Request(self.url + path, data=encoded, headers={"Content-Type": "application/json", **self.headers()})
+        opener = build_opener(ProxyHandler(), NoRedirect())
+        try:
+            with opener.open(request, timeout=timeout or self.timeout) as response:
+                return json.load(response), None
+        except HTTPError as error:
+            code, retry = "", error.headers.get("retry-after") if error.headers else None
+            try:
+                detail = json.loads(error.read(4096) or b"{}").get("error", {})
+                code = str(detail.get("code") or detail.get("type") or "")[:60]   # e.g. json_validate_failed, rate_limit_exceeded
+            except (ValueError, AttributeError, OSError):
+                pass
+            return None, (error.code, code, retry)
+        except (URLError, TimeoutError, OSError, ValueError) as error:
+            return None, (0, type(error).__name__, None)
 
     def warm_up(self, attempts=1):
         pass  # nothing to load
 
     def status(self):
-        try:
-            data = request_json(self.url + "/models", headers=self.headers(), timeout=8)
-            found = any(item.get("id") == self.model for item in data.get("data", []))
-            return {"ready": found, "message": "AI assistant ready" if found else "The configured AI model is not available."}
-        except ChatError:
-            return {"ready": False, "message": "The AI service could not be reached. Please try again shortly."}
+        data, err = self.call("/models", timeout=8)
+        if err:
+            self.last_error = "models: HTTP %s %s" % (err[0], err[1])
+            print("[hosted model] status check failed:", self.last_error, flush=True)
+            if err[0] == 401:
+                return {"ready": False, "message": "The AI service rejected the API key (GROQ_API_KEY). Check it in Render."}
+            return {"ready": False, "message": "The AI service could not be reached (HTTP %s). Please try again shortly." % (err[0] or "network")}
+        ids = {item.get("id") for item in data.get("data", [])}
+        usable = [m for m in [self.model] + self.fallbacks if m in ids]
+        return {"ready": bool(usable), "message": "AI assistant ready" if usable else "None of the configured AI models is available."}
 
     def answer(self, question, evidence, history, previous=None, correction=None):
         window = evidence.get("window")
@@ -625,34 +653,57 @@ class HostedModel:
         if previous is not None:
             messages.append({"role": "assistant", "content": json.dumps(previous, ensure_ascii=False)})
             messages.append({"role": "user", "content": correction})
-        body = {"model": self.model, "messages": messages, "temperature": 0, "max_completion_tokens": 1500,
-                "response_format": {"type": "json_schema", "json_schema": {"name": "care_answer", "schema": schema}}}
-        if self.model.startswith("openai/gpt-oss"):
-            body["reasoning_effort"] = "low"   # short private reasoning keeps answers fast
-        result = None
-        for attempt in range(2):
-            try:
-                result = request_json(self.url + "/chat/completions", body, headers=self.headers(), timeout=self.timeout)
-                break
-            except ChatError as error:
-                if attempt == 0 and isinstance(error.__cause__, HTTPError) and error.__cause__.code in (400, 429, 500, 502, 503):
-                    # 400: the model's JSON missed the schema; 429/5xx: brief overload. One more try.
-                    time.sleep(1.5 if error.__cause__.code != 400 else 0)
+        json_hint = ('\n\nReply with only a JSON object: {"answer": "<text>", "source_ids": ["S1", ...]} '
+                     'where every source id is one of: ' + ", ".join(sorted(allowed)) + ".")
+
+        # Attempts, simplest-to-satisfy last: schema-enforced output, then plain JSON mode, then other models.
+        plans = [(self.model, "schema"), (self.model, "json")] + [(m, "json") for m in self.fallbacks]
+        failures = []
+        for model, mode in plans:
+            body = {"model": model, "temperature": 0, "max_completion_tokens": 1500,
+                    "messages": messages if mode == "schema" else messages[:-1] + [dict(messages[-1], content=messages[-1]["content"] + json_hint)]}
+            if mode == "schema":
+                body["response_format"] = {"type": "json_schema", "json_schema": {"name": "care_answer", "schema": schema}}
+            else:
+                body["response_format"] = {"type": "json_object"}
+            if model.startswith("openai/gpt-oss"):
+                body["reasoning_effort"] = "low"
+            for _ in range(2):
+                result, err = self.call("/chat/completions", body)
+                if err and err[0] == 429:
+                    try:
+                        wait = min(float(err[2] or 3), 20)
+                    except ValueError:
+                        wait = 3
+                    time.sleep(wait)  # busy or per-minute limit: wait as told, then retry once
                     continue
-                raise ChatError("The AI service could not finish the answer. Please retry in a moment.", 503) from error
-        try:
-            choice = result["choices"][0]
-            if choice.get("finish_reason") == "length":
-                raise ValueError("Incomplete answer")
-            answer = json.loads(choice["message"]["content"])
-            ids = answer["source_ids"]
-            if (not isinstance(answer["answer"], str) or not answer["answer"].strip()
-                    or len(answer["answer"]) > 6000 or not isinstance(ids, list) or not ids
-                    or any(not isinstance(item, str) or item not in allowed for item in ids)):
-                raise ValueError("Invalid answer or source IDs")
-            return {"answer": answer["answer"].strip(), "source_ids": list(dict.fromkeys(ids))}
-        except (KeyError, TypeError, ValueError, AttributeError, IndexError) as error:
-            raise ChatError("The model returned an incomplete or untraceable answer. Please retry or rephrase the question.", 502) from error
+                break
+            if err:
+                failures.append("%s/%s: HTTP %s %s" % (model, mode, err[0] or "-", err[1]))
+                if err[0] == 401:
+                    break  # bad key: other models will not help
+                continue
+            try:
+                choice = result["choices"][0]
+                if choice.get("finish_reason") == "length":
+                    raise ValueError("length")
+                answer = json.loads(choice["message"]["content"])
+                ids = answer["source_ids"]
+                if (not isinstance(answer["answer"], str) or not answer["answer"].strip()
+                        or len(answer["answer"]) > 6000 or not isinstance(ids, list) or not ids
+                        or any(not isinstance(item, str) or item not in allowed for item in ids)):
+                    raise ValueError("invalid")
+                if failures:
+                    print("[hosted model] answered by %s/%s after: %s" % (model, mode, "; ".join(failures)), flush=True)
+                return {"answer": answer["answer"].strip(), "source_ids": list(dict.fromkeys(ids))}
+            except (KeyError, TypeError, ValueError, AttributeError, IndexError) as error:
+                failures.append("%s/%s: unusable answer (%s)" % (model, mode, error))
+        self.last_error = "; ".join(failures)
+        print("[hosted model] all attempts failed:", self.last_error, flush=True)
+        if any(" 401 " in f for f in failures):
+            raise ChatError("The AI service rejected the API key. Check GROQ_API_KEY in Render.", 503)
+        reason = failures[0].split(": ", 1)[1] if failures else "no response"
+        raise ChatError("The AI service could not finish the answer (%s). Please retry in a moment." % reason, 503)
 
 
 def make_model():
