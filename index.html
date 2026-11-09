@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEMPO Care - Micro Activity & Audio Identification</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Database CDN Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="vendor/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+    <!-- Sidebar Menu -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+    <div id="sidebarMenu" class="sidebar glass-panel">
+        <div class="sidebar-header">
+            <h2><i class="fa-solid fa-heart-pulse text-gradient-blue-purple icon-float"></i> TEMPO Care</h2>
+            <button id="closeSidebar" class="btn-back"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <ul class="sidebar-links">
+            <li onclick="document.querySelector('.nav-item[data-target=\'viewDashboard\']').click(); toggleSidebar();"><i class="fa-solid fa-home text-blue"></i> Home</li>
+            <li onclick="appNav.openAdminDashboard()" id="navAdminDashboard"><i class="fa-solid fa-user-shield text-purple"></i> Admin Dashboard</li>
+            <li onclick="appNav.openDoctorReport()"><i class="fa-solid fa-file-medical text-green"></i> Report for Doctor</li>
+            <li onclick="appNav.openAlerts()"><i class="fa-solid fa-bell text-red icon-shake-hover"></i> Alerts & Warnings</li>
+            <li onclick="appNav.openSettings()"><i class="fa-solid fa-gear text-orange spin-hover"></i> Settings</li>
+            <li class="logout-btn" onclick="appAuth.logout()"><i class="fa-solid fa-right-from-bracket"></i> Log Out</li>
+        </ul>
+    </div>
+
+    <!-- Gallery Permission Overlay -->
+    <div id="permissionOverlay" class="auth-overlay">
+        <div class="auth-card glass-panel pop-in">
+            <div style="font-size: 3.5rem; color: var(--accent-blue); margin-bottom: 15px;" class="icon-float">
+                <i class="fa-regular fa-image"></i>
+            </div>
+            <h3 style="margin-top: 0; color: var(--text-main);">Allow Access</h3>
+            <p class="text-muted" style="font-size: 0.95rem;">TEMPO Care needs permission to access your gallery to upload a photo.</p>
+            <div style="display: flex; gap: 10px; margin-top: 25px;">
+                <button class="action-btn-outline" style="flex: 1; justify-content: center;" onclick="photoHandler.denyPermission()">Don't Allow</button>
+                <button class="action-btn" style="flex: 1; justify-content: center;" onclick="photoHandler.grantPermission()">Allow</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Overlay -->
+    <div id="authOverlay" class="auth-overlay active">
+        <div class="auth-card glass-panel pop-in" id="welcomeScreen">
+            <div class="logo-container">
+                <i class="fa-solid fa-heart-pulse text-gradient-blue-purple icon-float" style="font-size: 4rem; margin-bottom: 15px; display: inline-block;"></i>
+                <h1 class="text-gradient-blue-purple" style="margin: 0; font-size: 2.5rem; font-weight: 800;">TEMPO Care</h1>
+                <p class="text-muted" style="margin-top: 8px; font-size: 1rem;">Smarter Care for Safer Tomorrows</p>
+            </div>
+
+            <div class="role-buttons" style="margin-top: 40px; display: flex; flex-direction: column; gap: 15px;">
+                <button class="action-btn gradient-purple" style="width: 100%; justify-content: center; font-size: 1.1rem; padding: 15px;" onclick="appAuth.showAuthScreen('Admin')">
+                    <i class="fa-solid fa-user-shield"></i> Developer Admin Login
+                </button>
+                <button class="action-btn-outline" style="width: 100%; justify-content: center; font-size: 1.1rem; padding: 15px;" onclick="appAuth.showAuthScreen('Care Family')">
+                    <i class="fa-solid fa-users"></i> Care Family Login / Sign up
+                </button>
+            </div>
+        </div>
+
+        <div class="auth-card glass-panel fade-in-up" id="authScreen" style="display: none;">
+            <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                <button class="btn-back" onclick="appAuth.showWelcomeScreen()">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <h2 id="authRoleTitle" class="text-gradient-blue-purple" style="margin: 0; flex: 1; text-align: center; padding-right: 20px;">Access</h2>
+            </div>
+
+            <div class="toggle-container" id="authTabs">
+                <button class="toggle-btn active" id="tabLogin">Login</button>
+                <button class="toggle-btn" id="tabSignup">Sign Up</button>
+            </div>
+
+            <div id="formLogin" class="fade-in-up">
+                <input type="text" id="loginPhone" class="input-field glow-focus" placeholder="Mobile Number / Email">
+                <input type="password" id="loginPass" class="input-field glow-focus" placeholder="Password">
+                <button class="action-btn gradient-blue pulse-btn" style="width: 100%; justify-content: center; margin-top: 10px;" onclick="appAuth.login()">Login</button>
+            </div>
+
+            <div id="formSignup" class="fade-in-up" style="display: none; text-align: left;">
+                <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 15px; text-align: center;">Register your family. Everyone will log in using their own phone number and a single <strong>shared family password</strong>.</p>
+                
+                <div id="primaryFamilyMember">
+                    <input type="text" id="signupName" class="input-field glow-focus" placeholder="Full Name *">
+                    <input type="tel" id="signupPhone" class="input-field glow-focus" placeholder="Mobile Number *">
+                    <input type="password" id="signupPass" class="input-field glow-focus" placeholder="Create Family Password *">
+                    
+                    <select id="signupRelation" class="input-field glow-focus" onchange="appAuth.toggleOtherRelation(this, 'signupRelationOther')">
+                        <option value="">Relation with Care Focus *</option>
+                        <option value="Son">Son</option>
+                        <option value="Daughter">Daughter</option>
+                        <option value="Spouse">Spouse</option>
+                        <option value="Father">Father</option>
+                        <option value="Mother">Mother</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <input type="text" id="signupRelationOther" class="input-field glow-focus" placeholder="Specify Relation *" style="display: none; margin-top: -5px; margin-bottom: 15px;">
+                    
+                    <input type="email" id="signupEmail" class="input-field glow-focus" placeholder="Email (Optional)">
+                </div>
+
+                <div id="extraFamilyMembers"></div>
+                
+                <button class="action-btn-outline" style="width: 100%; justify-content: center; margin-bottom: 15px;" onclick="appAuth.addAnotherFamilyMember()">
+                    <i class="fa-solid fa-plus spin-hover"></i> Add Another Care Family
+                </button>
+                <button class="action-btn gradient-blue" style="width: 100%; justify-content: center;" onclick="appAuth.signup()">
+                    Save & Next <i class="fa-solid fa-arrow-right slide-right-hover"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Navigation Bar -->
+    <nav class="top-nav glass-panel" id="topNav" style="display: none;">
+        <div id="menuToggleBtn" style="cursor: pointer; display: flex; align-items: center; gap: 8px;" class="hover-scale">
+            <i class="fa-solid fa-bars menu-icon" style="font-size: 1.2rem;"></i>
+            <span style="font-weight: 600; font-size: 1rem;">Menu</span>
+        </div>
+        <div class="title-container hover-scale">
+            <i class="fa-solid fa-satellite-dish text-blue pulse"></i>
+            <h1 id="headerTitle">Dashboard</h1>
+        </div>
+        <div class="live-badge glow-green"><span class="dot"></span> <span id="currentUserDisplay">Live</span></div>
+    </nav>
+
+    <div class="main-container">
+
+        <!-- Home Dashboard View -->
+        <div id="viewDashboard" class="view-section active">
+            <div class="toggle-container glass-panel" id="connToggleContainer">
+                <button class="toggle-btn active" id="tabRemote"><i class="fa-solid fa-globe"></i> Remote</button>
+                <button class="toggle-btn" id="tabBLE"><i class="fa-brands fa-bluetooth-b"></i> Bluetooth</button>
+                <button class="toggle-btn" id="tabWiFi"><i class="fa-solid fa-wifi"></i> Local Wi-Fi</button>
+            </div>
+
+            <!-- Remote: works from any network (device and phone on different Internet connections) -->
+            <div class="link-panel fade-in-up" id="remoteSetup">
+                <p class="link-hint"><i class="fa-solid fa-globe text-cyan"></i> Works from anywhere: the device and this phone can be on different networks.</p>
+                <div class="ip-input-container">
+                    <input type="text" id="pairCode" class="input-field glow-focus" placeholder="Pairing code, e.g. TC1A2B3C4D5E6F-K7P2QX9MAB" autocomplete="off" spellcheck="false" style="margin-bottom:0;">
+                    <button id="btnConnectRemote" class="action-btn gradient-green">Connect</button>
+                </div>
+                <p class="link-hint small">First time? Tap <strong>Bluetooth</strong> next to the device within 10 minutes of switching it on: it pairs automatically and Remote connects by itself.</p>
+            </div>
+
+            <!-- Bluetooth -->
+            <div class="link-panel fade-in-up" id="bleSetup" style="display: none;">
+                <p class="link-hint"><i class="fa-brands fa-bluetooth-b text-blue"></i> Next to the device. Also used to pair and to set the device's Wi-Fi.</p>
+                <button id="btnConnectBLE" class="action-btn gradient-blue" style="width:100%; justify-content:center;"><i class="fa-brands fa-bluetooth-b"></i> Find &amp; connect device</button>
+            </div>
+
+            <!-- Local Wi-Fi (same network) -->
+            <div class="link-panel fade-in-up" id="wifiSetup" style="display: none;">
+                <p class="link-hint"><i class="fa-solid fa-wifi text-green"></i> Same Wi-Fi network as the device.</p>
+                <div class="ip-input-container">
+                    <input type="text" id="ipAddress" class="input-field glow-focus" placeholder="Device IP address, e.g. 192.168.1.42" style="margin-bottom:0;">
+                    <button id="btnConnectWiFi" class="action-btn gradient-green">Connect</button>
+                </div>
+            </div>
+
+            <div class="card glass-panel connection-card fade-in-up" style="animation-delay: 0.1s;">
+                <div class="conn-left">
+                    <div class="icon-circle glow-red" id="connIcon"><i class="fa-solid fa-globe"></i></div>
+                    <div class="conn-info">
+                        <h3 id="connStatus" class="text-red">Disconnected</h3>
+                        <p id="connDetail">ESP32-P4 + RD-03D</p>
+                    </div>
+                </div>
+                <div class="conn-right">
+                    <button class="btn-icon hover-scale" id="btnDeviceWifi" title="Device Wi-Fi" disabled><i class="fa-solid fa-sliders"></i></button>
+                    <button class="btn-disconnect hover-scale" id="btnDisconnect" disabled>Disconnect</button>
+                </div>
+                <div class="link-chips">
+                    <span class="link-chip" id="chipRemote"><span class="chip-dot"></span>Remote</span>
+                    <span class="link-chip" id="chipBLE"><span class="chip-dot"></span>Bluetooth</span>
+                    <span class="link-chip" id="chipLocal"><span class="chip-dot"></span>Local</span>
+                    <span class="link-chip chip-metric" id="chipLatency" title="Round-trip time to the device"><i class="fa-solid fa-bolt"></i> <span>–</span></span>
+                    <span class="link-chip chip-metric" id="chipAge" title="Time since the last update from the device"><i class="fa-regular fa-clock"></i> <span>–</span></span>
+                </div>
+            </div>
+
+            <!-- Device Wi-Fi setup (over Bluetooth or Remote) -->
+            <div class="card glass-panel fade-in-up" id="deviceWifiCard" style="display: none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h3 style="margin:0; font-size:1.05rem;"><i class="fa-solid fa-tower-broadcast text-cyan"></i> Device Wi-Fi</h3>
+                    <button class="btn-back" id="btnCloseDeviceWifi"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="link-hint" id="devNetInfo">Current network: –</p>
+                <div class="ip-input-container">
+                    <select id="devWifiSsidList" class="input-field glow-focus" style="margin-bottom:0;"><option value="">Scan for networks…</option></select>
+                    <button id="btnScanWifi" class="action-btn-outline" style="padding: 10px 14px;"><i class="fa-solid fa-magnifying-glass"></i> Scan</button>
+                </div>
+                <input type="text" id="devWifiSsid" class="input-field glow-focus" placeholder="Network name (SSID)" style="margin-top:10px;">
+                <input type="password" id="devWifiPass" class="input-field glow-focus" placeholder="Password (empty for an open network)">
+                <button id="btnSendWifi" class="action-btn gradient-blue" style="width:100%; justify-content:center;"><i class="fa-solid fa-paper-plane"></i> Move device to this network</button>
+                <p class="link-hint small">2.4 GHz networks only. If the device cannot join the new network it falls back to the previous one automatically, so it is never lost.</p>
+                <p class="link-hint small" id="devWifiMsg"></p>
+            </div>
+
+            <!-- Grid container for side-by-side Dashboard cards -->
+            <div class="dashboard-grid">
+                
+                <!-- Radar Motion Classification Card -->
+                <div class="card glass-panel prediction-card fade-in-up" id="uiPredictionCard" style="animation-delay: 0.2s;">
+                    <h2><i class="fa-solid fa-person-rays text-blue"></i> Radar Motion</h2>
+                    <div class="main-prediction">
+                        <div class="pred-left">
+                            <div class="pred-icon-large pulse-glow-purple"><i class="fa-solid fa-spinner fa-spin" id="mainPredIcon"></i></div>
+                            <h1 class="pred-text text-gradient-blue-purple" id="valActivity">Waiting...</h1>
+                        </div>
+                    </div>
+                    <div class="activity-grid">
+                        <div class="act-box" data-act="Standing"><i class="fa-solid fa-person"></i><span>Standing</span></div>
+                        <div class="act-box" data-act="Sitting"><i class="fa-solid fa-chair"></i><span>Sitting</span></div>
+                        <div class="act-box" data-act="Stand_To_Sit"><i class="fa-solid fa-arrow-down"></i><span>Stand to Sit</span></div>
+                        <div class="act-box" data-act="Sit_To_Stand"><i class="fa-solid fa-arrow-up"></i><span>Sit to Stand</span></div>
+                        <div class="act-box" data-act="Walking"><i class="fa-solid fa-person-walking"></i><span>Walking</span></div>
+                        <div class="act-box" data-act="Entry"><i class="fa-solid fa-door-open"></i><span>Entry</span></div>
+                        <div class="act-box" data-act="Exit"><i class="fa-solid fa-door-closed"></i><span>Exit</span></div>
+                        <div class="act-box" data-act="No_Person"><i class="fa-solid fa-user-slash"></i><span>No Person</span></div>
+                    </div>
+                </div>
+
+                <!-- Audio Classification Card -->
+                <div class="card glass-panel audio-card fade-in-up" id="uiAudioCard" style="animation-delay: 0.25s;">
+                    <h2><i class="fa-solid fa-ear-listen text-cyan"></i> Audio Environment</h2>
+                    <div class="main-prediction">
+                        <div class="pred-left">
+                            <div class="pred-icon-large pulse-glow-cyan"><i class="fa-solid fa-spinner fa-spin" id="mainAudioIcon"></i></div>
+                            <h1 class="pred-text text-gradient-cyan-blue" id="valAudio" style="font-size: 2rem;">Waiting...</h1>
+                        </div>
+                    </div>
+                    <div class="activity-grid">
+                        <div class="aud-box" data-aud="Walker_Crutch"><i class="fa-solid fa-person-walking-with-cane"></i><span>Walker</span></div>
+                        <div class="aud-box" data-aud="Bathroom_Tap"><i class="fa-solid fa-faucet-drip"></i><span>Bath Tap</span></div>
+                        <div class="aud-box" data-aud="Basin_Tap"><i class="fa-solid fa-sink"></i><span>Basin Tap</span></div>
+                        <div class="aud-box" data-aud="Flush"><i class="fa-solid fa-toilet"></i><span>Flush</span></div>
+                        <div class="aud-box" data-aud="Shower"><i class="fa-solid fa-shower"></i><span>Shower</span></div>
+                        <div class="aud-box" data-aud="Door"><i class="fa-solid fa-door-closed"></i><span>Door</span></div>
+                        <div class="aud-box" data-aud="NO_Class"><i class="fa-solid fa-microphone-slash"></i><span>No Class</span></div>
+                    </div>
+                </div>
+
+            </div> <!-- End Dashboard Grid -->
+
+            <div class="card glass-panel backtrack-card fade-in-up" id="uiBacktrackCard" style="display: none; animation-delay: 0.3s;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 10px;">
+                    <h3 style="margin: 0; color: var(--accent-orange); font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-solid fa-clock-rotate-left spin-slow"></i> AI Backtracking
+                    </h3>
+                    <span class="badge-orange pulse">Correction Applied</span>
+                </div>
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <div class="backtrack-icon glow-orange">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div style="flex: 1;">
+                        <p id="backtrackMsg" style="margin: 0; font-size: 0.95rem; color: var(--text-main); font-weight: 600;"></p>
+                        <p id="backtrackDetails" style="margin: 4px 0 0 0; font-size: 0.85rem; color: var(--accent-orange);"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Dashboard View -->
+        <div id="viewAdminDashboard" class="view-section" style="display: none;">
+            <div style="display: flex; align-items: center; margin-bottom: 20px;" class="fade-in-up">
+                <h2 style="margin: 0; font-size: 1.5rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-user-shield icon-float"></i> Admin Dashboard</h2>
+            </div>
+            <p class="text-muted fade-in-up" style="margin-bottom: 20px; animation-delay: 0.1s;">Saved Care Focus and Family Information (Database)</p>
+            <div id="adminDashboardContent" class="fade-in-up" style="animation-delay: 0.2s;"></div>
+        </div>
+
+        <!-- Alerts View -->
+        <div id="viewAlerts" class="view-section" style="display: none;">
+            <div class="card glass-panel fade-in-up">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; color: var(--accent-red); display: flex; align-items: center; gap: 10px;"><i class="fa-solid fa-triangle-exclamation icon-shake-hover"></i> Activity Alerts</h2>
+                    <button class="action-btn-outline glow-red-border hover-scale" style="padding: 6px 12px; font-size: 0.8rem; border-color: var(--accent-red); color: var(--accent-red);" onclick="appAlerts.triggerSimulatedAlert()"><i class="fa-solid fa-vial"></i> Simulate Alert</button>
+                </div>
+                <p class="text-muted" style="margin-bottom: 20px; font-size: 0.9rem;">Unusual activity instances are automatically logged to the database and dispatched via SMS.</p>
+                <div id="alertsContainer"></div>
+            </div>
+        </div>
+
+        <!-- Onboarding Wizards (Care Focus & Health) -->
+        <div id="viewWizardForms" class="view-section" style="display: none;">
+            <!-- Care Focus Setup Step -->
+            <div class="card glass-panel pop-in" id="wizardStepFocus">
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; font-size: 1.4rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-user-plus icon-float"></i> Add Care Focus</h2>
+                </div>
+                <p class="text-muted" style="margin-bottom: 15px; font-size: 0.95rem;">Register the person(s) who will be monitored by TEMPO Care.</p>
+
+                <div id="addedFocusMembers" style="margin-bottom: 15px;"></div>
+
+                <div class="photo-upload-container">
+                    <div class="photo-placeholder-wrapper hover-scale">
+                        <div class="photo-placeholder glow-blue" id="cfPhotoPlaceholder" onclick="photoHandler.requestPermission()">
+                            <i class="fa-solid fa-camera" id="cfPhotoIcon"></i>
+                            <img id="cfPhotoPreview" alt="Profile" style="display:none;" />
+                            <div id="cfPhotoEditOverlay" class="photo-edit-overlay"><i class="fa-solid fa-pen"></i> Edit</div>
+                        </div>
+                        <button id="cfPhotoDeleteBtn" class="photo-delete-btn" style="display: none;" onclick="photoHandler.removePhoto()"><i class="fa-solid fa-times"></i></button>
+                    </div>
+                    <span class="text-muted" id="cfPhotoText" style="font-size: 0.85rem; display: block; margin-top: 10px;">Add Photo</span>
+                    <input type="file" id="cfPhotoInput" accept="image/*" style="display: none;" onchange="photoHandler.handleFile(event)">
+                </div>
+
+                <input type="text" id="cfName" class="input-field glow-focus" placeholder="Full Name *">
+                <div style="display: flex; gap: 10px;">
+                    <input type="number" id="cfAge" class="input-field glow-focus" placeholder="Age *">
+                    <select id="cfGender" class="input-field glow-focus">
+                        <option value="">Gender *</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Transgender">Transgender</option>
+                    </select>
+                </div>
+                <input type="tel" id="cfPhone" class="input-field glow-focus" placeholder="Phone Number">
+                <input type="tel" id="cfEmergency" class="input-field glow-focus" placeholder="Emergency Contact *">
+                
+                <button class="action-btn-outline hover-scale" style="width: 100%; justify-content: center; margin-top: 10px;" onclick="onboardingWizard.addCareFocus(false)">
+                    <i class="fa-solid fa-plus spin-hover"></i> Add Another Care Focus
+                </button>
+                <hr style="border-color: rgba(255,255,255,0.1); margin: 20px 0;">
+                <button class="action-btn gradient-blue hover-scale pulse-btn" style="width: 100%; justify-content: center;" onclick="onboardingWizard.saveAll()">
+                    <i class="fa-solid fa-check"></i> Save & Continue to Health
+                </button>
+            </div>
+
+            <!-- Health Profile Step 1 -->
+            <div class="card glass-panel fade-in-up" id="healthStep1" style="display: none;">
+                <div class="wizard-header">
+                    <button class="btn-back hover-scale" onclick="healthWizard.prevStep()"><i class="fa-solid fa-arrow-left"></i></button>
+                    <h2 style="margin: 0; flex: 1; text-align: center;" class="text-gradient-blue-purple">Health Profile</h2>
+                    <span class="badge-blue pulse">1/5</span>
+                </div>
+                <div class="health-icon-title"><div class="icon-bg glow-blue"><i class="fa-solid fa-droplet icon-float"></i></div><h3 class="text-blue">Diabetes / Blood Sugar</h3></div>
+                <div class="form-row"><label>Do you have diabetes?</label><label class="switch hover-scale"><input type="checkbox" id="hpDiabetes"><span class="slider"></span></label></div>
+                <div class="flex-row">
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">HbA1c Value</label><input type="text" id="hpHba1c" class="input-field glow-focus" placeholder="%"></div>
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">Date</label><input type="date" id="hpSugarDate" class="input-field glow-focus"></div>
+                </div>
+                <div class="flex-row">
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">Fasting Blood Sugar</label><input type="text" id="hpSugarFast" class="input-field glow-focus" placeholder="mg/dL"></div>
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">After Meal (2 hrs)</label><input type="text" id="hpSugarPost" class="input-field glow-focus" placeholder="mg/dL"></div>
+                </div>
+                <div class="form-row" style="margin-top: 15px;"><label>Do you take diabetes medicine?</label><label class="switch hover-scale"><input type="checkbox" id="hpDiabMed"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem;">Medicine Name</label>
+                <input type="text" id="hpDiabMedName" class="input-field glow-focus" placeholder="e.g. Metformin">
+                <div class="flex-row" style="align-items: center;">
+                    <label style="flex:1">How many times per day?</label>
+                    <select id="hpDiabMedFreq" class="input-field glow-focus" style="width: auto; margin-bottom: 0;"><option>1 time</option><option>2 times</option><option>3 times</option></select>
+                </div>
+                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 20px;" onclick="healthWizard.nextStep()">Next <i class="fa-solid fa-arrow-right slide-right-hover"></i></button>
+            </div>
+
+            <!-- Health Profile Step 2 -->
+            <div class="card glass-panel fade-in-up" id="healthStep2" style="display: none;">
+                <div class="wizard-header">
+                    <button class="btn-back hover-scale" onclick="healthWizard.prevStep()"><i class="fa-solid fa-arrow-left"></i></button>
+                    <h2 style="margin: 0; flex: 1; text-align: center;" class="text-gradient-blue-purple">Health Profile</h2>
+                    <span class="badge-blue pulse">2/5</span>
+                </div>
+                <div class="health-icon-title"><div class="icon-bg glow-red"><i class="fa-solid fa-heart-pulse icon-float"></i></div><h3 class="text-red">Blood Pressure</h3></div>
+                <div class="form-row"><label>Do you have BP problem?</label><label class="switch hover-scale"><input type="checkbox" id="hpBP"><span class="slider"></span></label></div>
+                <div class="flex-row">
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">Systolic (Upper)</label><input type="text" id="hpBPSystolic" class="input-field glow-focus" placeholder="mmHg"></div>
+                    <div style="flex:1"><label class="text-muted" style="font-size: 0.85rem;">Diastolic (Lower)</label><input type="text" id="hpBPDiastolic" class="input-field glow-focus" placeholder="mmHg"></div>
+                </div>
+                <label class="text-muted" style="font-size: 0.85rem;">Date of Last Check</label>
+                <input type="date" id="hpBPDate" class="input-field glow-focus">
+                <div class="form-row" style="margin-top: 15px;"><label>Do you take BP medicine?</label><label class="switch hover-scale"><input type="checkbox" id="hpBPMed"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem;">Medicine Name</label>
+                <input type="text" id="hpBPMedName" class="input-field glow-focus" placeholder="e.g. Amlodipine">
+                <div class="flex-row" style="align-items: center;">
+                    <label style="flex:1">How many times per day?</label>
+                    <select id="hpBPMedFreq" class="input-field glow-focus" style="width: auto; margin-bottom: 0;"><option>1 time</option><option>2 times</option><option>3 times</option></select>
+                </div>
+                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 20px;" onclick="healthWizard.nextStep()">Next <i class="fa-solid fa-arrow-right slide-right-hover"></i></button>
+            </div>
+
+            <!-- Health Profile Step 3 -->
+            <div class="card glass-panel fade-in-up" id="healthStep3" style="display: none;">
+                <div class="wizard-header">
+                    <button class="btn-back hover-scale" onclick="healthWizard.prevStep()"><i class="fa-solid fa-arrow-left"></i></button>
+                    <h2 style="margin: 0; flex: 1; text-align: center;" class="text-gradient-blue-purple">Health Profile</h2>
+                    <span class="badge-blue pulse">3/5</span>
+                </div>
+                <div class="health-icon-title"><div class="icon-bg glow-purple"><i class="fa-solid fa-bone icon-float"></i></div><h3 class="text-purple">Fracture / Orthopedic</h3></div>
+                <div class="form-row"><label>Any history of fracture?</label><label class="switch hover-scale"><input type="checkbox" id="hpFrac"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem; display:block; margin-bottom: 10px;">Which body part?</label>
+                <div class="checkbox-group" id="hpFracParts">
+                    <label class="hover-scale" style="justify-content: flex-start;"><input type="checkbox" value="Left Hand"> Left Hand</label>
+                    <label class="hover-scale" style="justify-content: flex-start;"><input type="checkbox" value="Right Hand"> Right Hand</label>
+                    <label class="hover-scale" style="justify-content: flex-start;"><input type="checkbox" value="Left Leg"> Left Leg</label>
+                    <label class="hover-scale" style="justify-content: flex-start;"><input type="checkbox" value="Right Leg"> Right Leg</label>
+                    <label class="hover-scale" style="justify-content: flex-start;"><input type="checkbox" value="Other"> Other</label>
+                </div>
+                <div class="form-row" style="margin-top: 15px;"><label>Is any metal rod or plate placed?</label><label class="switch hover-scale"><input type="checkbox" id="hpMetal"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem;">Details (Optional)</label>
+                <textarea id="hpMetalDetails" class="input-field glow-focus" placeholder="e.g. Metal plate in left hand, 2022" rows="2"></textarea>
+                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 20px;" onclick="healthWizard.nextStep()">Next <i class="fa-solid fa-arrow-right slide-right-hover"></i></button>
+            </div>
+
+            <!-- Health Profile Step 4 -->
+            <div class="card glass-panel fade-in-up" id="healthStep4" style="display: none;">
+                <div class="wizard-header">
+                    <button class="btn-back hover-scale" onclick="healthWizard.prevStep()"><i class="fa-solid fa-arrow-left"></i></button>
+                    <h2 style="margin: 0; flex: 1; text-align: center;" class="text-gradient-blue-purple">Health Profile</h2>
+                    <span class="badge-blue pulse">4/5</span>
+                </div>
+                <div class="health-icon-title"><div class="icon-bg glow-green"><i class="fa-solid fa-person-walking icon-float"></i></div><h3 class="text-green">Mobility & Daily Activities</h3></div>
+                <div class="form-row"><label>Do you have knee or mobility problems?</label><label class="switch hover-scale"><input type="checkbox" id="hpMob"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem; display:block; margin-bottom: 10px;">Which knee?</label>
+                <div class="checkbox-group flex-row" id="hpKnees">
+                    <label class="hover-scale"><input type="checkbox" value="Left Knee"> Left Knee</label>
+                    <label class="hover-scale"><input type="checkbox" value="Right Knee"> Right Knee</label>
+                </div>
+                <div class="form-row" style="margin-top: 15px;"><label>Difficulty while sitting or standing?</label><label class="switch hover-scale"><input type="checkbox" id="hpDiffSitStand"><span class="slider"></span></label></div>
+                <div class="form-row"><label>Do you normally require assistance in the bathroom?</label><label class="switch hover-scale"><input type="checkbox" id="hpBathAssist"><span class="slider"></span></label></div>
+                <div class="form-row"><label>Is a caregiver / Aya present for daily activities?</label><label class="switch hover-scale"><input type="checkbox" id="hpCaregiver"><span class="slider"></span></label></div>
+                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 20px;" onclick="healthWizard.nextStep()">Next <i class="fa-solid fa-arrow-right slide-right-hover"></i></button>
+            </div>
+
+            <!-- Health Profile Step 5 -->
+            <div class="card glass-panel fade-in-up" id="healthStep5" style="display: none;">
+                <div class="wizard-header">
+                    <button class="btn-back hover-scale" onclick="healthWizard.prevStep()"><i class="fa-solid fa-arrow-left"></i></button>
+                    <h2 style="margin: 0; flex: 1; text-align: center;" class="text-gradient-blue-purple">Health Profile</h2>
+                    <span class="badge-blue pulse">5/5</span>
+                </div>
+                <div class="health-icon-title"><div class="icon-bg glow-cyan"><i class="fa-solid fa-moon icon-float"></i></div><h3 class="text-cyan">Sleep & Other Information</h3></div>
+                <div class="form-row"><label>Do you have sleep related issues?</label><label class="switch hover-scale"><input type="checkbox" id="hpSleepIssues"><span class="slider"></span></label></div>
+                <div class="flex-row" style="align-items: center; margin-bottom: 15px;">
+                    <label style="flex:1">Average sleep duration</label>
+                    <input type="number" id="hpSleepHours" class="input-field glow-focus" style="width: 60px; margin: 0 10px;" value="6">
+                    <span>hours</span>
+                </div>
+                <div class="flex-row" style="align-items: center; margin-bottom: 15px;">
+                    <label style="flex:1">At night, how many times do you go to the bathroom?</label>
+                    <input type="number" id="hpNightVisits" class="input-field glow-focus" style="width: 60px; margin: 0 10px;" value="2">
+                    <span>times</span>
+                </div>
+                <div class="form-row"><label>Any memory issue (Alzheimer's, forgetfulness)?</label><label class="switch hover-scale"><input type="checkbox" id="hpMemory"><span class="slider"></span></label></div>
+                <label class="text-muted" style="font-size: 0.85rem;">Any other relevant information?</label>
+                <input type="text" id="hpNotes" class="input-field glow-focus" placeholder="e.g. Uses walking stick">
+
+                <div id="additionalIssuesContainer" style="margin-top: 10px;"></div>
+                <button class="action-btn-outline hover-scale" style="width: 100%; justify-content: center; margin-bottom: 20px; font-size: 0.9rem; padding: 10px;" onclick="healthWizard.addOtherIssue()">
+                    <i class="fa-solid fa-plus spin-hover"></i> Add Other Issue
+                </button>
+
+                <button class="action-btn gradient-green hover-scale pulse-btn" style="width: 100%; justify-content: center;" onclick="healthWizard.saveProfile()"><i class="fa-solid fa-check"></i> Save Profile</button>
+            </div>
+        </div>
+
+        <!-- Doctor Report Section -->
+        <div id="viewDoctorReport" class="view-section" style="display: none;">
+            <div class="card fade-in-up" style="background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); color: #1e293b;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="color: #1e293b; margin: 0; font-weight: 800;"><i class="fa-solid fa-file-medical text-blue"></i> Report for Doctor</h2>
+                    <i class="fa-solid fa-download text-blue hover-scale" style="font-size: 1.2rem; cursor: pointer;"></i>
+                </div>
+                <select class="input-field" style="background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                    <option>Last 30 Days</option>
+                    <option>Last 7 Days</option>
+                </select>
+                <h3 style="color: var(--accent-blue); font-size: 1.1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 15px;">Activity Summary</h3>
+                <ul class="report-list">
+                    <li class="hover-scale-subtle"><span>Average visits per day</span> <strong class="text-blue">6</strong></li>
+                    <li class="hover-scale-subtle"><span>Average duration</span> <strong class="text-orange">6 min</strong></li>
+                    <li class="hover-scale-subtle"><span>Longest stay</span> <strong class="text-red">18 min</strong></li>
+                    <li class="hover-scale-subtle"><span>Night visits (avg)</span> <strong class="text-purple">4</strong></li>
+                    <li class="hover-scale-subtle"><span>Total bathroom visits</span> <strong class="text-green">180</strong></li>
+                </ul>
+                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 25px; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);"><i class="fa-solid fa-share-nodes"></i> Share / Download Report</button>
+            </div>
+        </div>
+
+        <!-- Settings Section -->
+        <div id="viewSettings" class="view-section" style="display: none;">
+            <div class="card glass-panel fade-in-up">
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; font-size: 1.5rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-gear spin-hover"></i> Settings & Information</h2>
+                </div>
+                <div class="stat-item glass-sub-panel hover-scale-subtle" style="justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div class="icon-bg glow-blue"><i class="fa-solid fa-database text-blue"></i></div>
+                        <div><strong class="text-main">Backend Provider</strong><br><small class="text-muted">Realtime Cloud Database</small></div>
+                    </div>
+                    <span class="badge-green pulse">Connected</span>
+                </div>
+                <div class="stat-item glass-sub-panel hover-scale-subtle" style="justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div class="icon-bg glow-purple"><i class="fa-solid fa-microchip text-purple"></i></div>
+                        <div><strong class="text-main">Hardware Link</strong><br><small class="text-muted">ESP32-P4 + RD-03D</small></div>
+                    </div>
+                    <span class="badge-green pulse" id="hwLinkBadge">–</span>
+                </div>
+
+                <div class="stat-item glass-sub-panel" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div class="icon-bg glow-cyan"><i class="fa-solid fa-globe text-cyan"></i></div>
+                        <div><strong class="text-main">Device Link (Remote)</strong><br><small class="text-muted">Broker shared with the device firmware (CONFIG_LIVE_MQTT_URI)</small></div>
+                    </div>
+                    <input type="text" id="setPairCode" class="input-field glow-focus" placeholder="Pairing code" style="margin-bottom:0;" spellcheck="false">
+                    <input type="text" id="setBroker" class="input-field glow-focus" placeholder="wss://broker.emqx.io:8084/mqtt" style="margin-bottom:0;" spellcheck="false">
+                    <div style="display:flex; gap:10px;">
+                        <input type="text" id="setBrokerUser" class="input-field glow-focus" placeholder="Broker user (optional)" style="margin-bottom:0;" autocomplete="off">
+                        <input type="password" id="setBrokerPass" class="input-field glow-focus" placeholder="Broker password" style="margin-bottom:0;" autocomplete="new-password">
+                    </div>
+                    <button class="action-btn gradient-blue" style="justify-content:center;" onclick="linkUI.saveSettings()"><i class="fa-solid fa-floppy-disk"></i> Save &amp; reconnect</button>
+                </div>
+
+                <!-- Admin Only Database Access Link -->
+                <div class="stat-item glass-sub-panel hover-scale-subtle" id="adminDbAccess" style="display: none; justify-content: space-between; cursor: pointer;" onclick="window.open('https://supabase.com/dashboard/project/sgfbyszvsfebzcxxjlvc', '_blank')">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <div class="icon-bg glow-cyan"><i class="fa-solid fa-server text-cyan"></i></div>
+                        <div><strong class="text-main">Database Dashboard</strong><br><small class="text-muted">Direct Database Access (Admin Only)</small></div>
+                    </div>
+                    <i class="fa-solid fa-external-link-alt text-cyan"></i>
+                </div>
+
+                <h3 style="color: var(--accent-red); font-size: 1.1rem; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid rgba(239, 68, 68, 0.2); padding-bottom: 10px;"><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone</h3>
+                <div class="stat-item glass-sub-panel" style="justify-content: space-between; flex-direction: column; align-items: flex-start; gap: 15px; border-color: rgba(239, 68, 68, 0.3);">
+                    <div>
+                        <strong class="text-main">Delete Account</strong><br>
+                        <small class="text-muted">Permanently delete your account, associated care profiles, health data, and alerts from the database.</small>
+                    </div>
+                    <button class="action-btn-danger hover-scale" style="width: 100%; justify-content: center;" onclick="appAuth.deleteAccount()"><i class="fa-solid fa-trash"></i> Delete My Account & Data</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timeline Section -->
+        <div id="viewTimeline" class="view-section" style="display: none;">
+            <div class="card glass-panel fade-in-up">
+                <h2 style="font-size: 1.4rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-clock-rotate-left icon-float"></i> Activity Timeline</h2>
+                <ul class="timeline-list" id="timelineContainer"></ul>
+            </div>
+        </div>
+
+        <!-- AI Database Chat Assistant Section -->
+        <div id="viewInsights" class="view-section" style="display: none;">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;" class="fade-in-up">
+                <h2 style="margin: 0; font-size: 1.5rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-robot icon-float text-purple"></i> AI Database Assistant</h2>
+            </div>
+            <p class="text-muted fade-in-up" style="margin-bottom: 20px; font-size: 0.95rem;">Chat securely with the local AI. It reads directly from the care database to answer your queries instantly.</p>
+
+            <!-- Database-Integrated Chat Interface -->
+            <div class="card glass-panel chat-card-wrapper fade-in-up" style="animation-delay: 0.1s;">
+                <div class="chat-header">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div class="icon-bg glow-purple pulse" style="width: 35px; height: 35px;">
+                            <i class="fa-solid fa-brain" style="font-size: 1rem;"></i>
+                        </div>
+                        <div>
+                            <strong style="color: var(--text-main); font-size: 1rem;">TEMPO AI Intelligence</strong><br>
+                            <small class="text-cyan glow-text" style="font-size: 0.75rem; font-weight: 600;"><i class="fa-solid fa-database pulse" style="font-size: 0.6rem; color: var(--accent-cyan);"></i> Database Link Active</small>
+                        </div>
+                    </div>
+                    <button class="chip-action hover-scale" onclick="aiChat.clearChat()"><i class="fa-solid fa-rotate-left"></i> Clear</button>
+                </div>
+
+                <div class="chat-chips-container custom-scrollbar">
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What was the latest activity recorded?')">Latest Activity</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Summarize the recent room transitions')">Activity Summary</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What are the patient\'s blood sugar and BP records?')">Vitals & BP</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Is there any fall risk related to mobility?')">Mobility Risks</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Who is the emergency contact?')">Contacts</button>
+                </div>
+
+                <div class="chat-box custom-scrollbar" id="chatContainer">
+                    <div class="chat-msg bot-msg pop-in">
+                        Hello! I am TEMPO AI, your family care assistant. I am securely connected to the <strong class="text-gradient-blue-purple">care database</strong>. Ask me anything about your Care Focus's health records, recent activities, or alerts, and I will instantly retrieve and analyze the data for you!
+                    </div>
+                </div>
+
+                <form class="chat-input-container" onsubmit="event.preventDefault(); aiChat.sendQuery();" style="display: flex; gap: 10px; margin-top: 10px;">
+                    <input type="text" id="chatInput" class="input-field glow-focus" placeholder="Ask about health records, radar activities..." autocomplete="off" style="margin-bottom: 0; flex: 1;">
+                    <button type="submit" class="action-btn gradient-purple hover-scale" style="padding: 12px 18px; border-radius: 12px;"><i class="fa-solid fa-paper-plane slide-right-hover"></i></button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Profiles Section -->
+        <div id="viewProfile" class="view-section" style="display: none;">
+            <div class="card glass-panel fade-in-up">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0; font-size: 1.4rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-user-injured icon-float"></i> Monitored Profiles</h2>
+                    <button class="action-btn gradient-blue hover-scale" style="padding: 8px 14px; font-size: 0.85rem;" onclick="appNav.startOnboarding()"><i class="fa-solid fa-plus"></i> Add New</button>
+                </div>
+                <div id="profileList"></div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Nav -->
+    <div class="bottom-nav glass-nav" id="bottomNav" style="display: none;">
+        <div class="nav-item active hover-scale" data-target="viewDashboard"><div class="nav-icon-wrap"><i class="fa-solid fa-home"></i></div><span>Home</span></div>
+        <div class="nav-item hover-scale" data-target="viewTimeline"><div class="nav-icon-wrap"><i class="fa-solid fa-clock-rotate-left"></i></div><span>Timeline</span></div>
+        <div class="nav-item hover-scale" data-target="viewInsights"><div class="nav-icon-wrap"><i class="fa-solid fa-robot"></i></div><span>AI Assistant</span></div>
+        <div class="nav-item hover-scale" data-target="viewProfile"><div class="nav-icon-wrap"><i class="fa-solid fa-user"></i></div><span>Profiles</span></div>
+    </div>
+
+    <script src="device-link.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
