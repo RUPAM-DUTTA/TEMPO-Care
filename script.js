@@ -98,21 +98,24 @@ const appDatabase = {
         return data.filter(h => appState.allowedProfileIds.includes(h.profile_id));
     },
 
-    // Activity Logs
-    logActivity: async function(activity, profileId) {
-        if (!profileId && appAuth.currentSelectedRole !== 'Admin') return; // Cannot map activity if no active profile
-        const entry = { id: Date.now(), activity: activity, profile_id: profileId };
-        const { error } = await supabaseClient.from('tempo_activity_log').insert([entry]);
-        if (error) console.error("Log Activity Error:", error.message);
-        renderTimeline();
+    // Activity Logs. Errors are thrown (not swallowed) so the timeline can show them and retry.
+    logActivity: async function(entry) {
+        // Every activity must belong to a linked Care Focus person; the stored ID keeps the database's own type.
+        const ownerId = appState.allowedProfileIds.find(id => String(id) === String(entry?.profile_id));
+        if (ownerId === undefined) throw new Error("Select the person using this sensor before recording activities.");
+        const row = { id: entry.id, profile_id: ownerId, activity: entry.activity, created_at: entry.created_at };
+        const { data, error } = await supabaseClient.from('tempo_activity_log').insert([row]).select();
+        if (error) { console.error("Log Activity Error:", error.message); throw error; }
+        return (data && data[0]) || row;
     },
-    getActivityLogs: async function(limit = 35) {
-        const { data, error } = await supabaseClient.from('tempo_activity_log').select('*').order('created_at', { ascending: false }).limit(limit);
-        if (error) { console.error("Fetch Activity Logs Error:", error.message); return []; }
-        
-        // Data Isolation
-        if (appAuth.currentSelectedRole === 'Admin') return data;
-        return data.filter(a => appState.allowedProfileIds.includes(a.profile_id));
+    getActivityLogs: async function(limit = 35, profileId) {
+        // Data Isolation: only a linked person's records are ever requested from the database.
+        const ownerId = appState.allowedProfileIds.find(id => String(id) === String(profileId));
+        if (ownerId === undefined) return [];
+        const { data, error } = await supabaseClient.from('tempo_activity_log').select('*')
+            .eq('profile_id', ownerId).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit);
+        if (error) { console.error("Fetch Activity Logs Error:", error.message); throw error; }
+        return data || [];
     },
 
     // Alerts
@@ -134,9 +137,8 @@ const appDatabase = {
 async function refreshAppState() {
     const profiles = await appDatabase.getProfiles();
     appState.allowedProfileIds = profiles.map(p => p.id);
-    if (profiles.length > 0) {
-        appState.activeProfileId = profiles[0].id;
-    }
+    // The timeline keeps a still-linked selection, auto-selects a single person, and otherwise asks rather than guessing.
+    activityTimeline.setProfiles(profiles);
 }
 
 // --- Sidebar & App Navigation Logic ---
@@ -654,42 +656,31 @@ const appAuth = {
             return;
         }
 
-        if (this.currentSelectedRole === 'Admin') {
-            if (phone === 'Rupam' && pass === 'Rupam123') {
-                this.currentUserPhone = 'Rupam';
-                document.getElementById('authOverlay').classList.remove('active');
-                document.getElementById('currentUserDisplay').innerText = "Developer (Admin)";
-                document.getElementById('navAdminDashboard').style.display = "flex"; 
-                await refreshAppState();
-                appNav.goToHome();
-            } else {
-                alert("Restricted Access: Invalid Developer Credentials.");
-            }
-            return;
-        }
-
-        const users = await appDatabase.getUser(phone, this.currentSelectedRole);
-        const user = users.find(u => u.password === pass);
-
-        if (user) { 
-            this.currentUserPhone = phone;
+        try {
+            const user = await tempoApi.login(phone, pass, this.currentSelectedRole);
+            aiChat.resetSession();
+            this.currentUserPhone = user.phone;
+            this.currentSelectedRole = user.role;
+            document.getElementById('loginPass').value = '';
             document.getElementById('authOverlay').classList.remove('active');
             document.getElementById('currentUserDisplay').innerText = user.name;
-            document.getElementById('navAdminDashboard').style.display = "none"; 
+            document.getElementById('navAdminDashboard').style.display = user.role === 'Admin' ? 'flex' : 'none';
 
             await refreshAppState();
             const profiles = await appDatabase.getProfiles();
 
-            if (profiles.length === 0) {
+            if (profiles.length === 0 && user.role !== 'Admin') {
                 appNav.startOnboarding();
             } else {
                 appNav.goToHome();
             }
-        } else {
-            alert(`No matching ${this.currentSelectedRole} credentials found. Please verify or sign up.`);
+        } catch (error) {
+            alert(error.message);
         }
     },
     logout: function() {
+        aiChat.resetSession();
+        tempoApi.logout();
         if(sidebarMenu.classList.contains('open')) toggleSidebar();
         deviceLink.disconnectAll();
         if (typeof linkUI !== 'undefined') linkUI._auto = false;
@@ -698,6 +689,7 @@ const appAuth = {
         this.currentUserPhone = null;
         appState.activeProfileId = null;
         appState.allowedProfileIds = [];
+        activityTimeline.reset();
 
         document.getElementById('currentUserDisplay').innerText = "Live";
         document.getElementById('topNav').style.display = 'none';
@@ -715,7 +707,7 @@ const appAuth = {
     },
     
     deleteAccount: async function() {
-        if (!this.currentUserPhone || this.currentUserPhone === 'Rupam') return;
+        if (!this.currentUserPhone || this.currentSelectedRole === 'Admin') return;
 
         if (confirm("⚠️ WARNING: Permanently delete your account and ALL associated information (Profiles, Health Data, Logs, Alerts) from the database?")) {
             await appDatabase.deleteUserAndData(this.currentUserPhone, this.currentSelectedRole);
@@ -730,7 +722,7 @@ const appAuth = {
             return;
         }
 
-        const familyPassword = document.getElementById('signupPass').value; 
+        const familyPassword = document.getElementById('signupPass').value; // Grab shared family password
 
         let primaryRelSelect = document.getElementById('signupRelation').value;
         let primaryRelation = primaryRelSelect === 'Other' ? document.getElementById('signupRelationOther').value.trim() : primaryRelSelect;
@@ -760,6 +752,7 @@ const appAuth = {
             const email = block.querySelector('.fam-email').value.trim();
 
             if(name && phone && dynRelation) {
+                // Use the shared family password for extra members
                 familyDataToSave.push({name, phone, pass: familyPassword, relation: dynRelation, email});
             }
         }
@@ -771,9 +764,19 @@ const appAuth = {
                 role: this.currentSelectedRole,
                 password: member.pass
             });
-            if (error) console.warn(`Error registering ${member.name}: `, error.message);
+            if (error) {
+                alert('Registration could not be completed: ' + error.message);
+                return;
+            }
         }
 
+        try {
+            await tempoApi.login(primaryMember.phone, familyPassword, 'Care Family');
+            aiChat.resetSession();
+        } catch (error) {
+            alert('Your account was saved, but login could not finish: ' + error.message);
+            return;
+        }
         alert(`Care Family accounts successfully recorded to Database! Proceeding to setup the Care Focus (Patient).`);
         
         this.currentUserPhone = primaryMember.phone;
@@ -812,11 +815,13 @@ const viewSections = document.querySelectorAll('.view-section');
 navItems.forEach(item => {
     item.addEventListener('click', () => {
         const targetView = item.getAttribute('data-target');
+        if (targetView === 'viewInsights') aiChat.open();
         navItems.forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
         viewSections.forEach(section => {
             section.style.display = section.id === targetView ? 'block' : 'none';
             if (section.id === targetView) {
+                // Re-trigger animation
                 const animatedElements = section.querySelectorAll('.fade-in-up, .pop-in');
                 animatedElements.forEach(el => {
                     el.style.animation = 'none';
@@ -826,7 +831,7 @@ navItems.forEach(item => {
             }
         });
         if(targetView === 'viewProfile') loadProfiles();
-        if(targetView === 'viewTimeline') renderTimeline();
+        if(targetView === 'viewTimeline') activityTimeline.refresh();
     });
 });
 
@@ -843,6 +848,8 @@ const btnDisconnect = document.getElementById('btnDisconnect');
 const ipAddress = document.getElementById('ipAddress');
 const btnConnectWiFi = document.getElementById('btnConnectWiFi');
 const pairCodeInput = document.getElementById('pairCode');
+
+function linkEscape(t) { return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 const linkUI = {
     tab: 'remote',
@@ -941,12 +948,13 @@ function resetLiveTiles() {
     document.getElementById('mainAudioIcon').className = "fa-solid fa-spinner fa-spin text-muted";
     document.getElementById('mainAudioIcon').parentElement.className = "pred-icon-large";
     document.querySelectorAll('.aud-box').forEach(b => b.classList.remove('active'));
+    if (typeof sensorPlots !== 'undefined') sensorPlots.disconnected();   // gap in the live sensor charts
 }
 // kept for older call sites
 function setDisconnected() { resetLiveTiles(); }
 
 deviceLink.on('state', (st) => linkUI.render(st));
-deviceLink.on('live', (msg) => updateUI(msg));
+deviceLink.on('live', (msg, raw) => updateUI(raw || msg));   // raw text: the sensor card shows the packet
 deviceLink.on('status', (st) => linkUI.renderStatus(st));
 deviceLink.on('rtt', ({ ms }) => { document.querySelector('#chipLatency span').innerText = ms + ' ms'; });
 deviceLink.on('tick', ({ ageMs }) => {
@@ -971,7 +979,7 @@ deviceLink.on('warn', (m) => { connDetail.innerText = m; });
 deviceLink.on('scan', (aps) => {
     const sel = document.getElementById('devWifiSsidList');
     sel.innerHTML = '<option value="">' + (aps.length ? 'Choose a network…' : 'No networks found') + '</option>' +
-        aps.map(a => `<option value="${aiChat.escapeHTML(a.s)}">${aiChat.escapeHTML(a.s)} (${a.r} dBm${a.o ? ', open' : ''})</option>`).join('');
+        aps.map(a => `<option value="${linkEscape(a.s)}">${linkEscape(a.s)} (${a.r} dBm${a.o ? ', open' : ''})</option>`).join('');
     document.getElementById('devWifiMsg').innerText = aps.length ? `${aps.length} networks found.` : '';
 });
 deviceLink.on('ack', (m) => {
@@ -1083,179 +1091,16 @@ document.getElementById('btnSendWifi').addEventListener('click', async () => {
 
 linkUI.fillSettingsForm();
 
-// --- Local AI Chatbot Engine ---
-const aiChat = {
-    clearChat: function() {
-        const container = document.getElementById('chatContainer');
-        container.innerHTML = `
-            <div class="chat-msg bot-msg pop-in">
-                Chat cleared. I am ready to answer queries natively by securely analyzing your local health and radar database records.
-            </div>
-        `;
-    },
+// Local Wi-Fi (ws://) cannot work from a secure https:// page: browsers block it. Hide the tab there;
+// Remote covers the same network. It stays available when the app is opened from http:// (start.cmd).
+if (location.protocol === 'https:' && !/^(localhost|127\.)/.test(location.hostname)) {
+    btnTabWiFi.style.display = 'none';
+    wifiSetup.style.display = 'none';
+}
 
-    askSuggested: function(queryText) {
-        document.getElementById('chatInput').value = queryText;
-        this.sendQuery();
-    },
+// The local LLM assistant is implemented in chat.js.
 
-    sendQuery: async function() {
-        const input = document.getElementById('chatInput');
-        const text = input.value.trim();
-        if(!text) return;
-
-        const chatContainer = document.getElementById('chatContainer');
-        chatContainer.innerHTML += `<div class="chat-msg user-msg pop-in">${this.escapeHTML(text)}</div>`;
-        input.value = '';
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-
-        const typingId = "botTyping_" + Date.now();
-        chatContainer.innerHTML += `
-            <div class="chat-msg bot-msg pop-in" id="${typingId}">
-                <i class="fa-solid fa-spinner fa-spin text-cyan"></i> AI is scanning the database...
-            </div>
-        `;
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-
-        try {
-            const [profiles, healthList, activityLogs, alerts] = await Promise.all([
-                appDatabase.getProfiles(),
-                appDatabase.getHealthProfiles(),
-                appDatabase.getActivityLogs(50),
-                appDatabase.getAlerts()
-            ]);
-
-            const primaryProfile = profiles.length > 0 ? profiles[0] : null;
-            const primaryHealth = healthList.length > 0 ? healthList[0] : null;
-
-            setTimeout(() => {
-                let botReply = this.generateLocalResponse(text.toLowerCase(), primaryProfile, primaryHealth, activityLogs, alerts);
-                
-                const formattedReply = this.formatMarkdown(botReply);
-                const typingEl = document.getElementById(typingId);
-                if (typingEl) {
-                    typingEl.innerHTML = formattedReply;
-                    typingEl.classList.add('pop-in');
-                }
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-            }, 1200);
-
-        } catch (error) {
-            const typingEl = document.getElementById(typingId);
-            if (typingEl) typingEl.innerHTML = `<span style="color: var(--accent-red);"><i class="fa-solid fa-triangle-exclamation"></i> Error connecting to the database: ${error.message}</span>`;
-            chatContainer.scrollTop = chatContainer.scrollHeight;
-        }
-    },
-
-    generateLocalResponse: function(query, profile, health, logs, alerts) {
-        if (!profile) return "I don't have any Care Focus profiles registered yet. Please add one first from the Profiles tab.";
-        
-        let response = "";
-
-        if (query.includes("latest") || query.includes("recent activity") || query.includes("doing")) {
-            if (logs && logs.length > 0) {
-                let latest = logs[0];
-                let time = new Date(latest.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                response = `Based on the latest sensor records, the most recent activity was **${latest.activity.replace(/_/g, ' ')}** at ${time}.`;
-                if (logs.length > 1) {
-                    response += ` Just prior to that, the system logged **${logs[1].activity.replace(/_/g, ' ')}**.`;
-                }
-            } else {
-                response = "There are no recent activities logged in the database yet.";
-            }
-        } 
-        else if (query.includes("summary") || query.includes("transitions") || query.includes("pattern")) {
-            if (logs && logs.length > 0) {
-                let acts = logs.slice(0, 5).reverse().map(l => l.activity.replace(/_/g, ' ')).join(" ➔ ");
-                response = `Here is a summary of the most recent transitions from the database:\n\n**${acts}**\n\nThe pattern appears consistent with regular movement based on recent sensor data.`;
-            } else {
-                response = "I don't have enough data to generate a sequence summary right now.";
-            }
-        }
-        else if (query.includes("blood sugar") || query.includes("diabetes") || query.includes("vitals")) {
-            if (health) {
-                response = `**Blood Sugar & Vitals for ${profile.name}:**\n`;
-                response += `- **Diabetes Condition:** ${health.has_diabetes ? "Yes" : "No"}\n`;
-                if (health.hba1c) response += `- **HbA1c:** ${health.hba1c}%\n`;
-                if (health.sugar_fasting) response += `- **Fasting Sugar:** ${health.sugar_fasting} mg/dL\n`;
-                if (health.sugar_postprandial) response += `- **Post-meal:** ${health.sugar_postprandial} mg/dL\n`;
-                if (health.takes_diab_med && health.diab_med_name) {
-                    response += `- **Medication:** ${health.diab_med_name} (${health.diab_med_freq})\n`;
-                }
-            } else {
-                response = "I don't have any medical health records registered for this profile yet.";
-            }
-        }
-        else if (query.includes("bp") || query.includes("blood pressure") || query.includes("pressure")) {
-            if (health) {
-                response = `**Blood Pressure Records for ${profile.name}:**\n`;
-                response += `- **BP Issue Identified:** ${health.has_bp ? "Yes" : "No"}\n`;
-                if (health.bp_systolic && health.bp_diastolic) {
-                    response += `- **Last Reading:** ${health.bp_systolic} / ${health.bp_diastolic} mmHg (Recorded on ${health.bp_last_check || "N/A"})\n`;
-                }
-                if (health.takes_bp_med && health.bp_med_name) {
-                    response += `- **Medication:** ${health.bp_med_name} (${health.bp_med_freq})\n`;
-                }
-            } else {
-                response = "I don't have any health records registered for this profile.";
-            }
-        }
-        else if (query.includes("mobility") || query.includes("fall") || query.includes("risk") || query.includes("walking")) {
-            response = `**Mobility Assessment based on records:**\n`;
-            if (health) {
-                response += `- **Known Mobility Issues:** ${health.has_mobility_issue ? "Yes" : "No"}\n`;
-                response += `- **Difficulty Sitting/Standing:** ${health.sitting_standing_difficulty ? "Yes" : "No"}\n`;
-                response += `- **Assistance Required:** ${health.bathroom_assistance ? "Yes" : "No"}\n`;
-            }
-            if (alerts && alerts.length > 0) {
-                response += `\n**Warning Alerts found:**\n- ${alerts[0].message} (${new Date(alerts[0].created_at).toLocaleString()})`;
-            } else {
-                response += "\n*No recent fall alerts or abnormal mobility patterns detected in the activity logs.*";
-            }
-        }
-        else if (query.includes("contact") || query.includes("emergency") || query.includes("call")) {
-            response = `**Emergency Contact Information:**\n- Primary Emergency Number: **${profile.emergency || "Not provided"}**\n`;
-            if (profile.family_members && profile.family_members.length > 0) {
-                response += "\n**Registered Care Family Members:**\n";
-                profile.family_members.forEach(f => {
-                    response += `- ${f.name} (${f.relation}): ${f.phone}\n`;
-                });
-            }
-        }
-        else if (query.includes("sleep") || query.includes("night") || query.includes("bathroom")) {
-            if (health) {
-                response = `**Sleep and Nighttime Activity:**\n`;
-                response += `- **Sleep Issues Reported:** ${health.has_sleep_issue ? "Yes" : "No"}\n`;
-                response += `- **Average Duration:** ${health.sleep_duration || "Unknown"} hours\n`;
-                response += `- **Nighttime Bathroom Visits:** ${health.night_bathroom_frequency || 0} times on average\n`;
-            } else {
-                response = "I don't have sleep metrics registered for this profile.";
-            }
-        }
-        else if (query.includes("hello") || query.includes("hi ") || query.includes("hey")) {
-             response = `Hello! How can I assist you with ${profile.name}'s care today? I can pull the latest activity patterns or health stats directly from the database.`;
-        }
-        else {
-            response = `I am currently analyzing the live database records for **${profile.name}**. I can instantly provide details on:\n\n- Latest radar activities and room transitions\n- Health records (BP, Sugar, Mobility)\n- Emergency contacts\n- Sleep and nighttime behaviors\n\nPlease try asking specifically about one of these topics!`;
-        }
-
-        return response;
-    },
-
-    escapeHTML: function(str) {
-        return str.replace(/[&<>'"]/g, tag => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[tag] || tag));
-    },
-
-    formatMarkdown: function(text) {
-        let html = this.escapeHTML(text);
-        html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color: var(--accent-cyan);">$1</strong>');
-        html = html.replace(/\*(.*?)\*/g, '<em style="color: var(--accent-purple);">$1</em>');
-        html = html.replace(/\n/g, '<br>');
-        return html;
-    }
-};
-
-// --- Updated UI Helper Functions ---
+// --- UI Helper Functions ---
 function getIconClass(act) {
     const map = {
         "Standing": "fa-person", "Sitting": "fa-chair", "Stand_To_Sit": "fa-arrow-down", 
@@ -1265,7 +1110,6 @@ function getIconClass(act) {
     return map[act] || "fa-spinner fa-spin";
 }
 
-// Maps exact audio class values to FontAwesome icons
 function getAudioIconClass(aud) {
     const map = {
         walkercrutch: "fa-person-walking-with-cane", walker: "fa-person-walking-with-cane",
@@ -1277,14 +1121,7 @@ function getAudioIconClass(aud) {
     return map[String(aud || '').toLowerCase().replace(/[\s_\-]/g, '')] || "fa-spinner fa-spin";
 }
 
-async function renderTimeline() {
-    const logs = await appDatabase.getActivityLogs(20);
-    const container = document.getElementById('timelineContainer');
-    if(logs.length === 0) { container.innerHTML = "<li>No activities logged yet.</li>"; return; }
-    container.innerHTML = logs.map(log => 
-        `<li class="pop-in"><strong class="text-cyan" style="font-size: 1.1rem;">${log.activity.replace(/_/g, ' ')}</strong> <br><small class="text-muted">${new Date(log.created_at).toLocaleString()}</small></li>`
-    ).join('');
-}
+// The activity timeline (queue, retry and per-person history) is implemented in timeline.js.
 
 async function loadProfiles() {
     const profiles = await appDatabase.getProfiles();
@@ -1386,16 +1223,13 @@ const activityTracker = {
     }
 };
 
-// --- Updated Unified Parser ---
-let lastLoggedActivity = "";
-
+// --- Updated UI Handler ---
 function normLabel(x) { return String(x || '').toLowerCase().replace(/[\s_\-]/g, ''); }
 
 function updateUI(dataStr) {
     try {
         const data = typeof dataStr === 'string' ? JSON.parse(dataStr) : dataStr;
-        
-        // --- 1. Parse Radar Motion Classification ---
+        sensorPlots.receive(data, typeof dataStr === 'string' ? dataStr : JSON.stringify(data));  // distance / velocity / angle / position, whatever the packet carries
         if (data.activity) {
             const elActivity = document.getElementById('valActivity');
             const mainPredIcon = document.getElementById('mainPredIcon');
@@ -1406,7 +1240,7 @@ function updateUI(dataStr) {
             elActivity.className = "pred-text text-gradient-blue-purple";
             mainPredIcon.className = "fa-solid " + getIconClass(data.activity);
             
-            // Re-apply glowing pulse
+            // Add pulse glow based on activity change
             mainPredIconWrap.className = "pred-icon-large pulse-glow-purple";
 
             activityBoxes.forEach(box => {
@@ -1416,10 +1250,8 @@ function updateUI(dataStr) {
 
             activityTracker.logActivity(data.activity);
 
-            if(data.activity !== lastLoggedActivity && data.activity !== "Loading Buffer...") {
-                appDatabase.logActivity(data.activity, appState.activeProfileId);
-                lastLoggedActivity = data.activity;
-            }
+            // Repeated frames are deduplicated per person; "Loading Buffer..." is not an activity label.
+            activityTimeline.receive(data.activity);
         }
 
         // --- 2. Parse Audio Classification ---
@@ -1456,7 +1288,6 @@ function updateUI(dataStr) {
                 }
             });
         }
-        
     } catch (e) {
         console.warn("Error parsing UI update:", e);
     }

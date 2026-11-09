@@ -10,7 +10,6 @@
 
     <!-- Database CDN Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="vendor/mqtt.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 </head>
@@ -103,6 +102,7 @@
                         <option value="Mother">Mother</option>
                         <option value="Other">Other</option>
                     </select>
+                    <!-- Hidden input for "Other" relation -->
                     <input type="text" id="signupRelationOther" class="input-field glow-focus" placeholder="Specify Relation *" style="display: none; margin-top: -5px; margin-bottom: 15px;">
                     
                     <input type="email" id="signupEmail" class="input-field glow-focus" placeholder="Email (Optional)">
@@ -137,6 +137,8 @@
 
         <!-- Home Dashboard View -->
         <div id="viewDashboard" class="view-section active">
+          <div class="dashboard-layout">
+          <div class="dashboard-main">
             <div class="toggle-container glass-panel" id="connToggleContainer">
                 <button class="toggle-btn active" id="tabRemote"><i class="fa-solid fa-globe"></i> Remote</button>
                 <button class="toggle-btn" id="tabBLE"><i class="fa-brands fa-bluetooth-b"></i> Bluetooth</button>
@@ -209,51 +211,51 @@
                 <p class="link-hint small" id="devWifiMsg"></p>
             </div>
 
-            <!-- Grid container for side-by-side Dashboard cards -->
-            <div class="dashboard-grid">
-                
-                <!-- Radar Motion Classification Card -->
-                <div class="card glass-panel prediction-card fade-in-up" id="uiPredictionCard" style="animation-delay: 0.2s;">
-                    <h2><i class="fa-solid fa-person-rays text-blue"></i> Radar Motion</h2>
-                    <div class="main-prediction">
-                        <div class="pred-left">
-                            <div class="pred-icon-large pulse-glow-purple"><i class="fa-solid fa-spinner fa-spin" id="mainPredIcon"></i></div>
-                            <h1 class="pred-text text-gradient-blue-purple" id="valActivity">Waiting...</h1>
-                        </div>
-                    </div>
-                    <div class="activity-grid">
-                        <div class="act-box" data-act="Standing"><i class="fa-solid fa-person"></i><span>Standing</span></div>
-                        <div class="act-box" data-act="Sitting"><i class="fa-solid fa-chair"></i><span>Sitting</span></div>
-                        <div class="act-box" data-act="Stand_To_Sit"><i class="fa-solid fa-arrow-down"></i><span>Stand to Sit</span></div>
-                        <div class="act-box" data-act="Sit_To_Stand"><i class="fa-solid fa-arrow-up"></i><span>Sit to Stand</span></div>
-                        <div class="act-box" data-act="Walking"><i class="fa-solid fa-person-walking"></i><span>Walking</span></div>
-                        <div class="act-box" data-act="Entry"><i class="fa-solid fa-door-open"></i><span>Entry</span></div>
-                        <div class="act-box" data-act="Exit"><i class="fa-solid fa-door-closed"></i><span>Exit</span></div>
-                        <div class="act-box" data-act="No_Person"><i class="fa-solid fa-user-slash"></i><span>No Person</span></div>
+            <div class="card glass-panel recording-card fade-in-up" style="animation-delay: 0.15s;">
+                <label for="recordingProfile"><i class="fa-solid fa-user-check text-cyan"></i> This sensor is watching</label>
+                <select id="recordingProfile" class="input-field"><option value="">Log in to select a person</option></select>
+                <p id="recordingStatus" class="text-muted" role="status"></p>
+            </div>
+
+            <div class="card glass-panel prediction-card fade-in-up" id="uiPredictionCard" style="animation-delay: 0.2s;">
+                <h2><i class="fa-solid fa-person-rays text-blue"></i> Radar Motion</h2>
+                <div class="main-prediction">
+                    <div class="pred-left">
+                        <div class="pred-icon-large pulse-glow-purple"><i class="fa-solid fa-spinner fa-spin" id="mainPredIcon"></i></div>
+                        <h1 class="pred-text text-gradient-blue-purple" id="valActivity">Waiting...</h1>
                     </div>
                 </div>
-
-                <!-- Audio Classification Card -->
-                <div class="card glass-panel audio-card fade-in-up" id="uiAudioCard" style="animation-delay: 0.25s;">
-                    <h2><i class="fa-solid fa-ear-listen text-cyan"></i> Audio Environment</h2>
-                    <div class="main-prediction">
-                        <div class="pred-left">
-                            <div class="pred-icon-large pulse-glow-cyan"><i class="fa-solid fa-spinner fa-spin" id="mainAudioIcon"></i></div>
-                            <h1 class="pred-text text-gradient-cyan-blue" id="valAudio" style="font-size: 2rem;">Waiting...</h1>
-                        </div>
-                    </div>
-                    <div class="activity-grid">
-                        <div class="aud-box" data-aud="Walker_Crutch"><i class="fa-solid fa-person-walking-with-cane"></i><span>Walker</span></div>
-                        <div class="aud-box" data-aud="Bathroom_Tap"><i class="fa-solid fa-faucet-drip"></i><span>Bath Tap</span></div>
-                        <div class="aud-box" data-aud="Basin_Tap"><i class="fa-solid fa-sink"></i><span>Basin Tap</span></div>
-                        <div class="aud-box" data-aud="Flush"><i class="fa-solid fa-toilet"></i><span>Flush</span></div>
-                        <div class="aud-box" data-aud="Shower"><i class="fa-solid fa-shower"></i><span>Shower</span></div>
-                        <div class="aud-box" data-aud="Door"><i class="fa-solid fa-door-closed"></i><span>Door</span></div>
-                        <div class="aud-box" data-aud="NO_Class"><i class="fa-solid fa-microphone-slash"></i><span>No Class</span></div>
-                    </div>
+                <div class="activity-grid">
+                    <div class="act-box" data-act="Standing"><i class="fa-solid fa-person"></i><span>Standing</span></div>
+                    <div class="act-box" data-act="Sitting"><i class="fa-solid fa-chair"></i><span>Sitting</span></div>
+                    <div class="act-box" data-act="Stand_To_Sit"><i class="fa-solid fa-arrow-down"></i><span>Stand to Sit</span></div>
+                    <div class="act-box" data-act="Sit_To_Stand"><i class="fa-solid fa-arrow-up"></i><span>Sit to Stand</span></div>
+                    <div class="act-box" data-act="Walking"><i class="fa-solid fa-person-walking"></i><span>Walking</span></div>
+                    <div class="act-box" data-act="Entry"><i class="fa-solid fa-door-open"></i><span>Entry</span></div>
+                    <div class="act-box" data-act="Exit"><i class="fa-solid fa-door-closed"></i><span>Exit</span></div>
+                    <div class="act-box" data-act="No_Person"><i class="fa-solid fa-user-slash"></i><span>No Person</span></div>
                 </div>
+            </div>
 
-            </div> <!-- End Dashboard Grid -->
+              <!-- Audio Classification Card -->
+              <div class="card glass-panel audio-card fade-in-up" id="uiAudioCard" style="animation-delay: 0.25s;">
+                  <h2><i class="fa-solid fa-ear-listen text-cyan"></i> Audio Environment</h2>
+                  <div class="main-prediction">
+                      <div class="pred-left">
+                          <div class="pred-icon-large pulse-glow-cyan"><i class="fa-solid fa-spinner fa-spin" id="mainAudioIcon"></i></div>
+                          <h1 class="pred-text text-gradient-cyan-blue" id="valAudio" style="font-size: 2rem;">Waiting...</h1>
+                      </div>
+                  </div>
+                  <div class="activity-grid">
+                      <div class="aud-box" data-aud="Walker_Crutch"><i class="fa-solid fa-person-walking-with-cane"></i><span>Walker</span></div>
+                      <div class="aud-box" data-aud="Bathroom_Tap"><i class="fa-solid fa-faucet-drip"></i><span>Bath Tap</span></div>
+                      <div class="aud-box" data-aud="Basin_Tap"><i class="fa-solid fa-sink"></i><span>Basin Tap</span></div>
+                      <div class="aud-box" data-aud="Flush"><i class="fa-solid fa-toilet"></i><span>Flush</span></div>
+                      <div class="aud-box" data-aud="Shower"><i class="fa-solid fa-shower"></i><span>Shower</span></div>
+                      <div class="aud-box" data-aud="Door"><i class="fa-solid fa-door-closed"></i><span>Door</span></div>
+                      <div class="aud-box" data-aud="NO_Class"><i class="fa-solid fa-microphone-slash"></i><span>No Class</span></div>
+                  </div>
+              </div>
 
             <div class="card glass-panel backtrack-card fade-in-up" id="uiBacktrackCard" style="display: none; animation-delay: 0.3s;">
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 10px;">
@@ -272,6 +274,37 @@
                     </div>
                 </div>
             </div>
+          </div>
+            <div class="card glass-panel sensor-card fade-in-up" id="uiSensorCard" style="animation-delay: 0.25s;">
+                <div class="sensor-header">
+                    <h2><i class="fa-solid fa-satellite-dish text-cyan"></i> Live Sensor Data</h2>
+                    <div class="sensor-actions">
+                        <span id="sensorRate" class="text-muted" role="status">No data yet. Connect the sensor on this page.</span>
+                        <button type="button" id="sensorPause" class="chip-action hover-scale"><i class="fa-solid fa-pause"></i> Pause</button>
+                        <button type="button" id="sensorClear" class="chip-action hover-scale"><i class="fa-solid fa-eraser"></i> Clear</button>
+                    </div>
+                </div>
+                <div class="sensor-tiles">
+                    <div class="sensor-tile"><span class="sensor-label">Distance</span><strong id="sensorDistance">—</strong><small>metres from the sensor</small></div>
+                    <div class="sensor-tile"><span class="sensor-label">Velocity</span><strong id="sensorVelocity">—</strong><small>cm/s along the beam</small></div>
+                </div>
+                <p id="sensorNote" class="sensor-note" hidden></p>
+                <p class="sensor-packet"><span class="text-muted">Last packet:</span> <code id="sensorPacket">none yet</code></p>
+                <div class="sensor-charts">
+                    <figure class="sensor-figure"><figcaption>Distance, last 60 s (m)</figcaption><div class="sensor-plot"><canvas id="sensorDistanceChart" role="img" aria-label="Distance over the last 60 seconds"></canvas></div></figure>
+                    <figure class="sensor-figure"><figcaption>Velocity, last 60 s (cm/s)</figcaption><div class="sensor-plot"><canvas id="sensorVelocityChart" role="img" aria-label="Velocity over the last 60 seconds"></canvas></div></figure>
+                </div>
+                <details class="sensor-table">
+                    <summary>Recent samples (table)</summary>
+                    <div class="table-scroll">
+                        <table>
+                            <thead><tr><th>Time</th><th>Distance (mm)</th><th>Velocity (cm/s)</th></tr></thead>
+                            <tbody id="sensorTableBody"><tr><td colspan="3">No samples received yet.</td></tr></tbody>
+                        </table>
+                    </div>
+                </details>
+            </div>
+          </div>
         </div>
 
         <!-- Admin Dashboard View -->
@@ -507,7 +540,7 @@
                 <div class="stat-item glass-sub-panel hover-scale-subtle" style="justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 15px;">
                         <div class="icon-bg glow-purple"><i class="fa-solid fa-microchip text-purple"></i></div>
-                        <div><strong class="text-main">Hardware Link</strong><br><small class="text-muted">ESP32-P4 + RD-03D</small></div>
+                        <div><strong class="text-main">Hardware Link</strong><br><small class="text-muted">ESP32-S3 / P4 + RD-03D</small></div>
                     </div>
                     <span class="badge-green pulse" id="hwLinkBadge">–</span>
                 </div>
@@ -549,7 +582,20 @@
         <!-- Timeline Section -->
         <div id="viewTimeline" class="view-section" style="display: none;">
             <div class="card glass-panel fade-in-up">
-                <h2 style="font-size: 1.4rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-clock-rotate-left icon-float"></i> Activity Timeline</h2>
+                <div class="timeline-toolbar">
+                    <h2 style="font-size: 1.4rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-clock-rotate-left icon-float"></i> Activity Timeline</h2>
+                    <button type="button" id="timelineRefresh" class="chip-action hover-scale"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                </div>
+                <label for="timelineProfile" class="timeline-label">Care Focus person</label>
+                <select id="timelineProfile" class="input-field"><option value="">Log in to select a person</option></select>
+                <p id="timelineStatus" class="text-muted timeline-status" role="status"></p>
+                <button type="button" id="timelineRetry" class="chip-action hover-scale" hidden><i class="fa-solid fa-cloud-arrow-up"></i> Retry saving</button>
+                <div id="timelineSetup" class="timeline-setup" hidden>
+                    <strong><i class="fa-solid fa-screwdriver-wrench"></i> Administrator setup needed</strong>
+                    <p>The activity table has no person column yet, so readings cannot be saved. Copy the prepared SQL, run it once in the Supabase SQL Editor (project → SQL Editor → New query → Run), then click <em>Retry saving</em>.</p>
+                    <button type="button" class="chip-action hover-scale" onclick="activityTimeline.copySetup()"><i class="fa-solid fa-copy"></i> Copy setup SQL</button>
+                    <p id="timelineSetupMessage" role="status"></p>
+                </div>
                 <ul class="timeline-list" id="timelineContainer"></ul>
             </div>
         </div>
@@ -557,9 +603,9 @@
         <!-- AI Database Chat Assistant Section -->
         <div id="viewInsights" class="view-section" style="display: none;">
             <div style="display: flex; align-items: center; margin-bottom: 15px;" class="fade-in-up">
-                <h2 style="margin: 0; font-size: 1.5rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-robot icon-float text-purple"></i> AI Database Assistant</h2>
+                <h2 style="margin: 0; font-size: 1.5rem;" class="text-gradient-blue-purple"><i class="fa-solid fa-robot icon-float text-purple"></i> Ask TEMPO Care</h2>
             </div>
-            <p class="text-muted fade-in-up" style="margin-bottom: 20px; font-size: 0.95rem;">Chat securely with the local AI. It reads directly from the care database to answer your queries instantly.</p>
+            <p class="text-muted fade-in-up" style="margin-bottom: 20px; font-size: 0.95rem;">Understand your loved one's recorded activities, in everyday language. Answers are prepared on this computer using records from your care database.</p>
 
             <!-- Database-Integrated Chat Interface -->
             <div class="card glass-panel chat-card-wrapper fade-in-up" style="animation-delay: 0.1s;">
@@ -569,31 +615,97 @@
                             <i class="fa-solid fa-brain" style="font-size: 1rem;"></i>
                         </div>
                         <div>
-                            <strong style="color: var(--text-main); font-size: 1rem;">TEMPO AI Intelligence</strong><br>
-                            <small class="text-cyan glow-text" style="font-size: 0.75rem; font-weight: 600;"><i class="fa-solid fa-database pulse" style="font-size: 0.6rem; color: var(--accent-cyan);"></i> Database Link Active</small>
+                            <strong style="color: var(--text-main); font-size: 1rem;">Your activity assistant</strong><br>
+                            <small class="text-cyan" style="font-size: 0.75rem;">Local model · Answers with supporting records</small>
                         </div>
                     </div>
-                    <button class="chip-action hover-scale" onclick="aiChat.clearChat()"><i class="fa-solid fa-rotate-left"></i> Clear</button>
+                    <button type="button" class="chip-action hover-scale" onclick="aiChat.clearChat()"><i class="fa-solid fa-rotate-left"></i> New chat</button>
                 </div>
 
+                <div class="chat-scope">
+                    <label>Care Focus person
+                        <select id="chatProfile" class="input-field"><option value="">Log in to select a person</option></select>
+                    </label>
+                    <label>Period
+                        <select id="chatPeriod" class="input-field">
+                            <option value="today">Today</option><option value="yesterday">Yesterday</option>
+                            <option value="week">Last 7 days</option><option value="custom">Custom dates</option>
+                        </select>
+                    </label>
+                    <label>From <input type="date" id="chatStart" class="input-field" required></label>
+                    <label>Through <input type="date" id="chatEnd" class="input-field" required></label>
+                </div>
+                <div class="chat-connection">
+                    <span id="chatStatus" role="status">Open the assistant to check its connection</span>
+                    <button type="button" class="chip-action" onclick="aiChat.open()">Refresh</button>
+                </div>
+                <p class="chat-scope-note">Answers use the person and dates above. Change the dates to ask about a different period. Times are shown in your computer's time zone.</p>
                 <div class="chat-chips-container custom-scrollbar">
-                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What was the latest activity recorded?')">Latest Activity</button>
-                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Summarize the recent room transitions')">Activity Summary</button>
-                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What are the patient\'s blood sugar and BP records?')">Vitals & BP</button>
-                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Is there any fall risk related to mobility?')">Mobility Risks</button>
-                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Who is the emergency contact?')">Contacts</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What was the latest recorded activity?')">Latest activity</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Give me a short summary of this period.')">Summary</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('How many times did they enter and exit the bathroom?')">Entries &amp; exits</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('When did they last leave the bathroom?')">Last exit</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Did they go to the bathroom at night?')">Night visits</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What happened in the morning?')">Morning</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What sitting and standing changes were recorded?')">Posture changes</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('When did they walk?')">Walking</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('When was the bathroom last empty?')">Room empty</button>
+                    <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What can these records tell us, and what is still unknown?')">What is known?</button>
                 </div>
+                <details class="chat-examples">
+                    <summary>More example questions</summary>
+                    <div class="chat-examples-grid">
+                        <div><strong>Visits</strong>
+                            <button type="button" onclick="aiChat.askSuggested('When did they first enter the bathroom?')">When did they first enter the bathroom?</button>
+                            <button type="button" onclick="aiChat.askSuggested('When did they last enter the bathroom?')">When did they last enter the bathroom?</button>
+                            <button type="button" onclick="aiChat.askSuggested('How many exits were recorded?')">How many exits were recorded?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Were there more entries or exits?')">Were there more entries or exits?</button>
+                        </div>
+                        <div><strong>Times of day</strong>
+                            <button type="button" onclick="aiChat.askSuggested('How many entries were recorded at night?')">How many entries at night?</button>
+                            <button type="button" onclick="aiChat.askSuggested('What happened after 9 PM?')">What happened after 9 PM?</button>
+                            <button type="button" onclick="aiChat.askSuggested('How many entries between 6 pm and 7 pm?')">Entries between 6 pm and 7 pm?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Was there any activity in the afternoon?')">Any activity in the afternoon?</button>
+                        </div>
+                        <div><strong>Posture &amp; movement</strong>
+                            <button type="button" onclick="aiChat.askSuggested('How many sit-to-stand transitions were recorded?')">How many sit-to-stand transitions?</button>
+                            <button type="button" onclick="aiChat.askSuggested('When did they last sit down from standing?')">When did they last sit down?</button>
+                            <button type="button" onclick="aiChat.askSuggested('When was standing last recorded?')">When was standing last recorded?</button>
+                            <button type="button" onclick="aiChat.askSuggested('How many walking records are there?')">How many walking records?</button>
+                        </div>
+                        <div><strong>Days (choose Last 7 days)</strong>
+                            <button type="button" onclick="aiChat.askSuggested('How many entries were recorded yesterday?')">How many entries yesterday?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Which day this week had the most activity?')">Which day had the most activity?</button>
+                            <button type="button" onclick="aiChat.askSuggested('On which days were there any records this week?')">On which days were there records?</button>
+                            <button type="button" onclick="aiChat.askSuggested('What was recorded yesterday evening?')">What was recorded yesterday evening?</button>
+                        </div>
+                        <div><strong>Sequence &amp; coverage</strong>
+                            <button type="button" onclick="aiChat.askSuggested('What happened right after the last entry?')">What happened right after the last entry?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Which activity was recorded most often?')">Which activity was recorded most often?</button>
+                            <button type="button" onclick="aiChat.askSuggested('How many records were checked for this answer?')">How many records were checked?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Are there gaps in the data?')">Are there gaps in the data?</button>
+                        </div>
+                        <div><strong>हिन्दी / বাংলা</strong>
+                            <button type="button" onclick="aiChat.askSuggested('Aaj kitni baar bathroom gaye?')">Aaj kitni baar bathroom gaye?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Raat ko kitni baar bathroom gaye?')">Raat ko kitni baar bathroom gaye?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Sheshbar ki record hoyechhe?')">Sheshbar ki record hoyechhe?</button>
+                            <button type="button" onclick="aiChat.askSuggested('Sokale ki hoyechhilo?')">Sokale ki hoyechhilo?</button>
+                        </div>
+                    </div>
+                    <p class="chat-scope-note">The full list is in <code>chat_queries.txt</code>. "Today" and "yesterday" must be inside the selected period.</p>
+                </details>
 
-                <div class="chat-box custom-scrollbar" id="chatContainer">
+                <div class="chat-box custom-scrollbar" id="chatContainer" role="log" aria-label="Care assistant conversation" aria-live="polite" aria-relevant="additions text">
                     <div class="chat-msg bot-msg pop-in">
-                        Hello! I am TEMPO AI, your family care assistant. I am securely connected to the <strong class="text-gradient-blue-purple">care database</strong>. Ask me anything about your Care Focus's health records, recent activities, or alerts, and I will instantly retrieve and analyze the data for you!
+                        Choose a person and a period, then ask about their recorded activities. Each answer includes the records used to prepare it.
                     </div>
                 </div>
 
                 <form class="chat-input-container" onsubmit="event.preventDefault(); aiChat.sendQuery();" style="display: flex; gap: 10px; margin-top: 10px;">
-                    <input type="text" id="chatInput" class="input-field glow-focus" placeholder="Ask about health records, radar activities..." autocomplete="off" style="margin-bottom: 0; flex: 1;">
-                    <button type="submit" class="action-btn gradient-purple hover-scale" style="padding: 12px 18px; border-radius: 12px;"><i class="fa-solid fa-paper-plane slide-right-hover"></i></button>
+                    <input type="text" id="chatInput" class="input-field glow-focus" placeholder="What was their latest recorded activity?" aria-label="Your activity question" maxlength="1200" autocomplete="off" style="margin-bottom: 0; flex: 1;">
+                    <button id="chatSend" type="submit" class="action-btn gradient-purple hover-scale" aria-label="Send question" style="padding: 12px 18px; border-radius: 12px;"><i class="fa-solid fa-paper-plane slide-right-hover"></i></button>
                 </form>
+                <p class="chat-scope-note">AI answers can make mistakes. Check the supporting records. Activity logs cannot confirm current safety or diagnose a health condition.</p>
             </div>
         </div>
 
@@ -618,7 +730,12 @@
         <div class="nav-item hover-scale" data-target="viewProfile"><div class="nav-icon-wrap"><i class="fa-solid fa-user"></i></div><span>Profiles</span></div>
     </div>
 
+    <script src="config.js"></script>
+    <script src="vendor/mqtt.min.js"></script>
     <script src="device-link.js"></script>
+    <script src="chat.js"></script>
     <script src="script.js"></script>
+    <script src="timeline.js"></script>
+    <script src="sensor.js"></script>
 </body>
 </html>
