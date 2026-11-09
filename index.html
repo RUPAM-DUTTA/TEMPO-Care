@@ -157,6 +157,7 @@
             <div class="link-panel fade-in-up" id="bleSetup" style="display: none;">
                 <p class="link-hint"><i class="fa-brands fa-bluetooth-b text-blue"></i> Next to the device. Also used to pair and to set the device's Wi-Fi.</p>
                 <button id="btnConnectBLE" class="action-btn gradient-blue" style="width:100%; justify-content:center;"><i class="fa-brands fa-bluetooth-b"></i> Find &amp; connect device</button>
+                <p class="link-hint small link-msg" id="bleMsg" role="status"></p>
             </div>
 
             <!-- Local Wi-Fi (same network) -->
@@ -166,6 +167,7 @@
                     <input type="text" id="ipAddress" class="input-field glow-focus" placeholder="Device IP address, e.g. 192.168.1.42" style="margin-bottom:0;">
                     <button id="btnConnectWiFi" class="action-btn gradient-green">Connect</button>
                 </div>
+                <p class="link-hint small link-msg" id="localMsg" role="status"></p>
             </div>
 
             <div class="card glass-panel connection-card fade-in-up" style="animation-delay: 0.1s;">

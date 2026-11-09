@@ -87,7 +87,7 @@
     };
     const listeners = {};
     function on(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); }
-    function emit(ev, data) { (listeners[ev] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } }); }
+    function emit(ev, data, extra) { (listeners[ev] || []).forEach(fn => { try { fn(data, extra); } catch (e) { console.error(e); } }); }
 
     function setState(transport, value) {
         if (state[transport] === value) return;
@@ -95,8 +95,10 @@
         emit('state', Object.assign({}, state));
     }
 
-    function handleMessage(msg, via) {
+    function handleMessage(msg, via, raw) {
         if (!msg || typeof msg !== 'object') return;
+        // ESP32-S3 Arduino sketch: plain {"activity","confidence","rd_d","rd_s",...} without a type
+        if (!msg.type && (msg.activity !== undefined || msg.rd_d !== undefined || msg.audio !== undefined)) msg.type = 'live';
         switch (msg.type) {
         case 'live':
             if (typeof msg.seq === 'number') {         // drop the copy that arrives over the 2nd transport
@@ -106,7 +108,7 @@
                 if (state.lastSeqs.length > 40) state.lastSeqs.shift();
             }
             state.lastMsgAt = performance.now();
-            emit('live', Object.assign({ via }, msg));
+            emit('live', Object.assign({ via }, msg), raw);
             break;
         case 'status':
             if (msg.online === false) { state.deviceOnline = false; emit('state', Object.assign({}, state)); break; }
@@ -147,8 +149,26 @@
     function parseLine(line, via) {
         line = (line || '').trim();
         if (!line) return;
-        try { handleMessage(JSON.parse(line), via); }
+        try { handleMessage(JSON.parse(line), via, line); }
         catch (e) { console.warn('[device-link] bad message via', via, line.slice(0, 80)); }
+    }
+
+    // Splits a stream into complete JSON objects. Works for the P4 firmware (one object per line)
+    // and for the ESP32-S3 sketch (objects back to back, no separator). Returns the unfinished rest.
+    function drainObjects(buf, via) {
+        let depth = 0, inStr = false, esc = false, start = -1;
+        for (let i = 0; i < buf.length; i++) {
+            const ch = buf[i];
+            if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+            if (ch === '"') { if (depth > 0) inStr = true; continue; }
+            if (ch === '{') { if (depth === 0) start = i; depth++; }
+            else if (ch === '}' && depth > 0) {
+                depth--;
+                if (depth === 0) { parseLine(buf.slice(start, i + 1), via); buf = buf.slice(i + 1); i = -1; start = -1; }
+            }
+        }
+        if (depth === 0) return '';                      // only whitespace / separators left
+        return buf.slice(start).length > 8192 ? '' : buf.slice(start);
     }
 
     // ================================================================== Remote (MQTT over WSS)
@@ -217,7 +237,12 @@
         device: null, chr: null, rx: '', queue: Promise.resolve(),
         supported() { return !!(navigator.bluetooth && navigator.bluetooth.requestDevice); },
         async connect() {
-            if (!this.supported()) throw new Error('Web Bluetooth is not available in this browser. Use Chrome or Edge (Android / Windows / macOS) over HTTPS.');
+            if (!this.supported()) throw new Error('This browser has no Web Bluetooth. Use Chrome or Edge on Windows, macOS, Android or ChromeOS (not iPhone/Safari/Firefox).');
+            if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability())) {
+                const e = new Error('Bluetooth is off or not available on this computer. Turn Bluetooth on in the system settings and try again.');
+                e.name = 'NotFoundError';
+                throw e;
+            }
             setState('ble', 'connecting');
             try {
                 const dev = await navigator.bluetooth.requestDevice({
@@ -235,20 +260,17 @@
                 this.chr = await svc.getCharacteristic(BLE_CHAR_UUID);
                 this.rx = '';
                 this.chr.addEventListener('characteristicvaluechanged', (e) => {
-                    this.rx += dec.decode(e.target.value);
-                    let i;
-                    while ((i = this.rx.indexOf('\n')) >= 0) {
-                        const line = this.rx.slice(0, i);
-                        this.rx = this.rx.slice(i + 1);
-                        parseLine(line, 'ble');
-                    }
-                    if (this.rx.length > 8192) this.rx = '';
+                    this.rx = drainObjects(this.rx + dec.decode(e.target.value), 'ble');
                 });
                 await this.chr.startNotifications();
                 setState('ble', 'on');
-                await this.send({ cmd: 'pair' });     // returns the pairing code (inside the pairing window)
-                await this.send({ cmd: 'status' });
-                this.ping();
+                // ESP32-P4 firmware answers these; the ESP32-S3 sketch has no write support and ignores them
+                const pr = this.chr.properties;
+                if (!pr || pr.write || pr.writeWithoutResponse) {
+                    await this.send({ cmd: 'pair' });     // returns the pairing code (inside the pairing window)
+                    await this.send({ cmd: 'status' });
+                    this.ping();
+                }
                 return dev.name || 'device';
             } catch (e) {
                 setState('ble', this.chr ? 'on' : 'off');
@@ -263,6 +285,8 @@
         // Writes are serialised and split into 20-byte pieces (works with the minimum ATT MTU).
         send(obj) {
             if (!this.chr) return Promise.resolve(false);
+            const pr = this.chr.properties;
+            if (pr && !pr.write && !pr.writeWithoutResponse) return Promise.resolve(false);   // ESP32-S3 sketch: notify only
             const ids = parseCode(settings.code);
             if (ids && ['wifi', 'wifi_forget', 'reboot', 'scan', 'pair'].includes(obj.cmd)) obj = Object.assign({ key: ids.secret }, obj);
             const bytes = enc.encode(JSON.stringify(obj) + '\n');
@@ -299,9 +323,10 @@
             try { ws = new WebSocket(`ws://${host}/`); }
             catch (e) { setState('local', 'error'); throw e; }
             this.ws = ws;
-            ws.onopen = () => { setState('local', 'on'); this.send({ cmd: 'status' }); this.ping(); };
-            ws.onmessage = (e) => String(e.data).split('\n').forEach(l => parseLine(l, 'local'));
-            ws.onerror = () => setState('local', 'error');
+            this.rx = '';
+            ws.onopen = () => { state.localFailures = 0; setState('local', 'on'); this.send({ cmd: 'status' }); this.ping(); };
+            ws.onmessage = (e) => { this.rx = drainObjects((this.rx || '') + String(e.data), 'local'); };
+            ws.onerror = () => { state.localFailures = (state.localFailures || 0) + 1; setState('local', 'error'); };
             ws.onclose = () => {
                 if (this.ws !== ws) return;
                 this.ws = null;

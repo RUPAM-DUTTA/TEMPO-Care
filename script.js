@@ -854,6 +854,8 @@ const linkUI = {
         remoteSetup.style.display = tab === 'remote' ? 'block' : 'none';
         bleSetup.style.display = tab === 'ble' ? 'block' : 'none';
         wifiSetup.style.display = tab === 'local' ? 'block' : 'none';
+        if (tab === 'local' && location.protocol === 'https:') linkMsg('localMsg', 'Note: on this https:// page the browser blocks Local Wi-Fi. Use Remote instead (it works on the same network too).', 'error');
+        if (tab === 'ble' && !deviceLink.bleSupported()) linkMsg('bleMsg', 'This browser has no Web Bluetooth. Use Chrome or Edge on Windows, macOS, Android or ChromeOS (not iPhone/Safari/Firefox).', 'error');
     },
     fillSettingsForm() {
         const st = deviceLink.settings;
@@ -991,18 +993,56 @@ document.getElementById('btnConnectRemote').addEventListener('click', () => {
     deviceLink.connectRemote();
 });
 
+function linkMsg(id, text, kind) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'link-hint small link-msg' + (kind ? ' is-' + kind : '');
+}
+
+function bleErrorText(err) {
+    const m = String((err && err.message) || '');
+    if (!deviceLink.bleSupported()) return m;
+    if (err && err.name === 'NotFoundError' && /cancel/i.test(m))
+        return 'No device chosen. If the list was empty: the device is off, too far away, or its Bluetooth has not started (check the device log for "live_ble: advertising").';
+    if (err && err.name === 'NotFoundError') return 'Bluetooth is off or not available on this computer. Turn Bluetooth on in the system settings and try again.';
+    if (err && err.name === 'SecurityError') return 'The browser blocked Bluetooth on this page. Open the app over https:// or http://localhost in Chrome or Edge.';
+    if (err && err.name === 'NetworkError') return 'The device was found but the connection dropped. Move closer and try again.';
+    return m || 'Bluetooth connection failed.';
+}
+
 document.getElementById('btnConnectBLE').addEventListener('click', async () => {
-    try { await deviceLink.connectBLE(); }
-    catch (err) {
-        if (err && err.name === 'NotFoundError') return;          // user closed the chooser
+    const btn = document.getElementById('btnConnectBLE');
+    linkMsg('bleMsg', 'Choose your device in the browser window (ESP32-TempoCare-…)…');
+    btn.disabled = true;
+    try {
+        const name = await deviceLink.connectBLE();
+        linkMsg('bleMsg', 'Connected to ' + name + '.', 'ok');
+    } catch (err) {
         console.error("BLE Error:", err);
-        alert((err && err.message) || "Bluetooth connection failed. Use Chrome or Edge over HTTPS and make sure the device is powered on.");
+        linkMsg('bleMsg', bleErrorText(err), 'error');
+    } finally {
+        btn.disabled = false;
     }
 });
 
 btnConnectWiFi.addEventListener('click', () => {
-    try { deviceLink.connectLocal(ipAddress.value); }
-    catch (e) { alert(e.message); }
+    const ip = ipAddress.value.trim();
+    if (!ip) return linkMsg('localMsg', 'Enter the device IP address (shown on the device card and in the device log).', 'error');
+    const local = /^(localhost|127\.)/.test(ip.replace(/^wss?:\/\//, ''));
+    if (location.protocol === 'https:' && !local) {
+        return linkMsg('localMsg', 'Local Wi-Fi cannot work on this https:// page: browsers block plain ws:// connections from secure sites. ' +
+            'Use the Remote tab (it also works on the same network), or open the app from http:// on a computer in the same network.', 'error');
+    }
+    linkMsg('localMsg', 'Connecting to ws://' + ip + ' …');
+    try { deviceLink.connectLocal(ip); }
+    catch (e) { linkMsg('localMsg', e.message, 'error'); }
+});
+
+deviceLink.on('state', (st) => {
+    if (st.local === 'on') linkMsg('localMsg', 'Connected.', 'ok');
+    else if (st.local === 'error' || (st.local === 'connecting' && deviceLink.state.localFailures > 0))
+        linkMsg('localMsg', 'Cannot reach the device at that address. Check that it is on the same Wi-Fi network, the IP is current, and port 81 is not blocked. Retrying…', 'error');
 });
 
 btnDisconnect.addEventListener('click', () => {

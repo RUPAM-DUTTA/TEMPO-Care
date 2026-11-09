@@ -370,3 +370,7 @@ input:checked + .slider:before { transform: translateX(20px); box-shadow: -2px 2
   #connToggleContainer .toggle-btn { font-size: 0.85rem; padding: 10px 6px; }
   .link-chip.chip-metric { margin-left: 0; }
 }
+
+.link-msg { min-height: 1.2em; }
+.link-msg.is-error { color: var(--accent-orange); }
+.link-msg.is-ok { color: var(--accent-green); }
