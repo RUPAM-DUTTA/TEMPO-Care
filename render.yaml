@@ -1,0 +1,30 @@
+# TEMPO Care AI assistant server (free Render web service).
+# Deploy: https://render.com/deploy?repo=https://github.com/RUPAM-DUTTA/TEMPO-Care/tree/ai-server
+services:
+  - type: web
+    name: tempo-care-ai-rupam            # public address: https://tempo-care-ai-rupam.onrender.com
+    runtime: python
+    plan: free
+    autoDeployTrigger: off
+    buildCommand: echo "server.py uses only the Python standard library"
+    startCommand: python server.py --host 0.0.0.0
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GROQ_API_KEY                # from https://console.groq.com/keys (free)
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: TEMPO_ADMIN_USERNAME        # the Developer Admin Login
+        sync: false
+      - key: TEMPO_ADMIN_PASSWORD        # 8+ characters
+        sync: false
+      - key: TEMPO_ORIGINS               # the published app that may use this server
+        value: https://rupam-dutta.github.io
+      - key: TEMPO_HTTPS
+        value: "1"
+      - key: SUPABASE_URL                # public project address (same as in the app)
+        value: https://sgfbyszvsfebzcxxjlvc.supabase.co
+      - key: SUPABASE_KEY                # publishable key (same as in the app)
+        value: sb_publishable_n0V0owGDLWp9W4ZtUOWyag_M3RQ7e10
