@@ -243,7 +243,7 @@ const aiChat = {
         this.controller = null;
         this.conversation = crypto.randomUUID();
         document.getElementById('chatContainer').replaceChildren();
-        this.message('Choose a person and a period, then ask about their recorded activities. I can explain the latest record, summarize activity changes, or count recorded entries.', 'bot');
+        this.message('Choose a person and a period, then ask me anything. I can explain the latest record, summarize activity changes and count recorded entries, or give suggestions: safer night-time trips, routine, diet, exercises, what to ask the doctor.', 'bot');
         document.getElementById('chatInput').value = '';
         this.setBusy(false);
         // Reset stored context too; a unique conversation ID prevents stale replies from reusing it.
@@ -274,6 +274,15 @@ const aiChat = {
 
     showEvidence(element, data) {
         const coverage = data.coverage;
+        if (data.mode === 'advice') {
+            const note = document.createElement('p');
+            note.className = 'chat-coverage chat-advice-note';
+            note.textContent = `Suggestions for ${data.profile.name} · based on general knowledge, their health profile` +
+                (coverage.records_used ? ` and ${coverage.records_used} activity records` : '') + ' · not a diagnosis; check with their doctor before medical changes';
+            element.classList.add('advice-msg');
+            element.append(note);
+            return;
+        }
         const note = document.createElement('p');
         note.className = 'chat-coverage';
         const format = value => new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
@@ -317,7 +326,9 @@ const aiChat = {
         this.controller = controller;
         this.message(question, 'user');
         input.value = '';
-        const reply = this.message('Reading the activity records and preparing an answer… On this computer an answer usually takes 30–90 seconds.', 'bot');
+        const reply = this.message(tempoApi.publishedSite()
+            ? 'Thinking… (a few seconds; up to a minute if the assistant was asleep)'
+            : 'Reading the activity records and preparing an answer… On this computer an answer usually takes 30–90 seconds.', 'bot');
         this.setBusy(true);
         // Longer than the server's own model timeout, so its specific message is shown rather than this generic one.
         const timer = setTimeout(() => controller.abort(), 200000);

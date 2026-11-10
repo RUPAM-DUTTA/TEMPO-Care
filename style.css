@@ -523,3 +523,8 @@ input:checked + .slider:before { transform: translateX(20px); box-shadow: -2px 2
 .timeline-list li.is-correct::before { background: var(--accent-green); box-shadow: 0 0 10px var(--accent-green); }
 .timeline-list li.is-corrected::before { background: #fbbf24; box-shadow: 0 0 10px #fbbf24; }
 .timeline-list li.is-rejected::before { background: #f43f5e; box-shadow: 0 0 10px #f43f5e; }
+
+/* AI assistant: suggestion answers */
+.chat-chip-advice { background: rgba(168, 85, 247, 0.12); color: #d8b4fe; border-color: rgba(168, 85, 247, 0.35); }
+.chat-msg.advice-msg { border-left: 3px solid #a855f7; }
+.chat-advice-note { color: #c4b5fd; }

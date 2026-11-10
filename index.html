@@ -665,6 +665,9 @@
                 </div>
                 <p class="chat-scope-note">Answers use the person and dates above. Change the dates to ask about a different period. Times are shown in your computer's time zone.</p>
                 <div class="chat-chips-container custom-scrollbar">
+                    <button class="chat-chip chat-chip-advice hover-scale-subtle" onclick="aiChat.askSuggested('Suggest ways to make their night-time bathroom trips safer.')">💡 Safer nights</button>
+                    <button class="chat-chip chat-chip-advice hover-scale-subtle" onclick="aiChat.askSuggested('Based on their health profile, what daily routine and diet tips would you suggest?')">💡 Routine &amp; diet</button>
+                    <button class="chat-chip chat-chip-advice hover-scale-subtle" onclick="aiChat.askSuggested('Suggest simple exercises to make sitting down and standing up easier for them.')">💡 Exercises</button>
                     <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('What was the latest recorded activity?')">Latest activity</button>
                     <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('Give me a short summary of this period.')">Summary</button>
                     <button class="chat-chip hover-scale-subtle" onclick="aiChat.askSuggested('How many times did they enter and exit the bathroom?')">Entries &amp; exits</button>
@@ -726,7 +729,7 @@
                 </div>
 
                 <form class="chat-input-container" onsubmit="event.preventDefault(); aiChat.sendQuery();" style="display: flex; gap: 10px; margin-top: 10px;">
-                    <input type="text" id="chatInput" class="input-field glow-focus" placeholder="What was their latest recorded activity?" aria-label="Your activity question" maxlength="1200" autocomplete="off" style="margin-bottom: 0; flex: 1;">
+                    <input type="text" id="chatInput" class="input-field glow-focus" placeholder="Ask about their activity, or ask for a suggestion…" aria-label="Your question" maxlength="1200" autocomplete="off" style="margin-bottom: 0; flex: 1;">
                     <button id="chatSend" type="submit" class="action-btn gradient-purple hover-scale" aria-label="Send question" style="padding: 12px 18px; border-radius: 12px;"><i class="fa-solid fa-paper-plane slide-right-hover"></i></button>
                 </form>
                 <p class="chat-scope-note">AI answers can make mistakes. Check the supporting records. Activity logs cannot confirm current safety or diagnose a health condition.</p>
