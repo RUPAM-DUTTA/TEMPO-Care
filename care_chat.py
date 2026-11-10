@@ -54,6 +54,8 @@ class Database:
                     detail = json.load(cause)
                 except (ValueError, OSError):
                     detail = {}
+                if detail.get("code") == "42703" and "verification" in detail.get("message", ""):
+                    raise ChatError("verification column missing", 409) from error  # activity checks not set up yet
                 if detail.get("code") == "42703" and "profile_id" in detail.get("message", ""):
                     raise ChatError("Activity history is not linked to Care Focus people yet. Ask your administrator to finish setting up activity recording.", 503) from error
             raise
@@ -87,6 +89,18 @@ class Database:
             ("created_at", "gte." + start.isoformat()), ("created_at", "lt." + end.isoformat()),
             ("order", "created_at.desc,id.desc"),
         ]
+        # Records the family marked "nothing happened" in the Timeline are left out; corrected records already hold
+        # the right activity. Before the activity-check migration has run, the column does not exist: read all.
+        if getattr(self, "has_checks", True):
+            try:
+                return self._activities(filters + [("or", "(verification.is.null,verification.neq.rejected)")], cap)
+            except ChatError as error:
+                if error.status != 409:
+                    raise
+                self.has_checks = False
+        return self._activities(filters, cap)
+
+    def _activities(self, filters, cap):
         rows = []
         while len(rows) <= cap:
             page = self.rows("tempo_activity_log", filters, limit=min(1000, cap + 1 - len(rows)), offset=len(rows))

@@ -21,9 +21,12 @@ ADMIN_FILE = ROOT / ".tempo-admin.json"
 STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/script.js": "script.js",
                 "/chat.js": "chat.js", "/timeline.js": "timeline.js", "/sensor.js": "sensor.js", "/style.css": "style.css",
                 "/device-link.js": "device-link.js", "/vendor/mqtt.min.js": "vendor/mqtt.min.js",
-                "/config.js": "config.js"}
+                "/config.js": "config.js", "/report.js": "report.js",
+                "/vendor/jspdf.umd.min.js": "vendor/jspdf.umd.min.js",
+                "/vendor/jspdf.plugin.autotable.min.js": "vendor/jspdf.plugin.autotable.min.js"}
 MIME = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}
-SETUP_SQL = ROOT / "supabase" / "001_link_activity_profiles.sql"
+# One-time database migrations handed to an admin (Timeline -> Copy setup SQL). Each is safe to run again.
+SETUP_SQL_FILES = [ROOT / "supabase" / "001_link_activity_profiles.sql", ROOT / "supabase" / "002_activity_validation.sql"]
 # Web pages on other sites that may call this API (the app published on GitHub Pages). Comma-separated.
 ALLOWED_ORIGINS = {origin.strip().rstrip("/").lower() for origin in
                    os.getenv("TEMPO_ORIGINS", "https://rupam-dutta.github.io").split(",") if origin.strip()}
@@ -256,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
                 # The migration text is only handed to an authenticated administrator; it is never applied by this server.
                 if session["identity"]["role"] != "Admin":
                     raise ChatError("Only an administrator can view the database setup.", 403)
-                self.send(200, {"sql": SETUP_SQL.read_text(encoding="utf-8")})
+                self.send(200, {"sql": "\n\n".join(f.read_text(encoding="utf-8") for f in SETUP_SQL_FILES if f.exists())})
             else:
                 self.send(404, {"error": "Not found."})
         except ChatError as error:
