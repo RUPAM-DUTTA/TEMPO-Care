@@ -437,3 +437,67 @@ input:checked + .slider:before { transform: translateX(20px); box-shadow: -2px 2
 .link-msg { min-height: 1.2em; }
 .link-msg.is-error { color: var(--accent-orange); }
 .link-msg.is-ok { color: var(--accent-green); }
+
+/* ---------- Report for Doctor ---------- */
+.report-card { --r-ink: #1e293b; --r-muted: #64748b; --r-line: #e2e8f0; --r-soft: #f1f5f9; --r-blue: #2563eb; --r-night: #7c3aed;
+    background: #ffffff; color: var(--r-ink); border-radius: 18px; padding: 22px; }
+.report-title h2 { margin: 0; font-size: 1.35rem; font-weight: 800; color: var(--r-ink); display: flex; gap: 10px; align-items: center; }
+.report-title h2 i { color: var(--r-blue); }
+.report-title p { margin: 6px 0 16px; color: var(--r-muted); font-size: 0.92rem; }
+.report-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
+.report-form label, .report-contact label { display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; font-weight: 700; color: var(--r-muted); text-transform: uppercase; letter-spacing: 0.04em; min-width: 0; }
+.report-custom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; grid-column: 1 / -1; }
+.report-custom[hidden] { display: none; }
+.report-input { width: 100%; box-sizing: border-box; padding: 11px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: var(--r-soft);
+    color: var(--r-ink); font: inherit; font-size: 0.95rem; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.report-input:focus { outline: 2px solid var(--r-blue); outline-offset: 1px; }
+.report-form .action-btn { justify-content: center; }
+.report-msg { min-height: 1.3em; margin: 12px 0 4px; font-size: 0.88rem; color: var(--r-muted); }
+.report-msg.is-error { color: #c2410c; }
+.report-msg.is-ok { color: #047857; }
+.report-preview { border: 1px solid var(--r-line); border-radius: 14px; padding: 16px; margin-top: 8px; min-width: 0; }
+.report-empty { color: var(--r-muted); margin: 0; }
+.report-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: flex-start; padding-bottom: 10px; border-bottom: 2px solid var(--r-ink); }
+.report-head strong { font-size: 1.15rem; }
+.report-head span { color: var(--r-muted); font-size: 0.88rem; }
+.report-stamp { font-variant-numeric: tabular-nums; }
+.report-preview h3 { margin: 18px 0 8px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--r-blue); }
+.report-preview h3 small { text-transform: none; letter-spacing: 0; color: var(--r-muted); font-weight: 500; margin-left: 8px; }
+.report-health { display: grid; grid-template-columns: minmax(90px, max-content) 1fr; gap: 6px 14px; margin: 0; font-size: 0.9rem; }
+.report-health dt { font-weight: 700; }
+.report-health dd { margin: 0; color: #334155; min-width: 0; overflow-wrap: anywhere; }
+.report-table-wrap { overflow-x: auto; }
+.report-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; }
+.report-table th { text-align: left; background: var(--r-soft); color: var(--r-muted); font-weight: 700; padding: 8px 10px; font-size: 0.78rem; }
+.report-table td { padding: 7px 10px; border-bottom: 1px solid var(--r-line); }
+.report-key td:not(:first-child), .report-key th:not(:first-child) { text-align: right; white-space: nowrap; }
+.report-daily td:not(:first-child), .report-daily th:not(:first-child) { text-align: center; }
+.report-daily { max-height: none; }
+.report-notes { margin: 0; padding-left: 20px; font-size: 0.9rem; line-height: 1.5; }
+.report-notes li { margin-bottom: 4px; }
+.report-bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding: 6px 0; border-bottom: 1px solid var(--r-line); }
+.rbar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.rbar span { display: flex; align-items: flex-end; width: 100%; background: var(--r-blue); border-radius: 3px 3px 0 0; min-height: 0; }
+.rbar span i { display: block; width: 100%; background: var(--r-night); border-radius: 0; }
+.rbar-none span { background: transparent; }
+.rbar-none { background: repeating-linear-gradient(45deg, transparent 0 4px, var(--r-soft) 4px 8px); }
+.report-bars-axis { display: flex; justify-content: space-between; color: var(--r-muted); font-size: 0.75rem; margin-top: 4px; }
+.lg { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin: 0 3px 0 8px; }
+.lg-day { background: var(--r-blue); } .lg-night { background: var(--r-night); }
+.report-method { margin: 16px 0 0; font-size: 0.8rem; color: var(--r-muted); line-height: 1.5; }
+.report-share { margin-top: 20px; border-top: 1px solid var(--r-line); padding-top: 14px; }
+.report-share h3 { margin: 0 0 10px; font-size: 1rem; }
+.report-contact { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.report-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 14px; }
+.report-actions [hidden] { display: none; }
+.report-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 14px; border-radius: 12px; border: 1px solid #cbd5e1;
+    background: #ffffff; color: var(--r-ink); font: inherit; font-weight: 700; cursor: pointer; }
+.report-btn:hover:not(:disabled) { border-color: var(--r-blue); color: var(--r-blue); }
+.report-btn:focus-visible { outline: 2px solid var(--r-blue); outline-offset: 2px; }
+.report-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.report-wa { background: #25d366; border-color: #25d366; color: #052e16; }
+.report-wa:hover:not(:disabled) { background: #1fbd59; color: #052e16; border-color: #1fbd59; }
+.report-mail { background: var(--r-blue); border-color: var(--r-blue); color: #ffffff; }
+.report-mail:hover:not(:disabled) { background: #1d4ed8; color: #ffffff; border-color: #1d4ed8; }
+.report-hint { margin: 10px 0 0; font-size: 0.8rem; color: var(--r-muted); line-height: 1.5; }
+@media (max-width: 480px) { .report-table { font-size: 0.82rem; } .report-key td:first-child { min-width: 132px; } .report-key td:not(:first-child) { white-space: normal; } .report-table td, .report-table th { padding: 6px 7px; } .report-card { padding: 16px; } .report-custom { grid-template-columns: 1fr; } .report-health { grid-template-columns: 1fr; gap: 2px; } .report-health dd { margin-bottom: 6px; } }

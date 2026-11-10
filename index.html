@@ -503,24 +503,48 @@
 
         <!-- Doctor Report Section -->
         <div id="viewDoctorReport" class="view-section" style="display: none;">
-            <div class="card fade-in-up" style="background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); color: #1e293b;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="color: #1e293b; margin: 0; font-weight: 800;"><i class="fa-solid fa-file-medical text-blue"></i> Report for Doctor</h2>
-                    <i class="fa-solid fa-download text-blue hover-scale" style="font-size: 1.2rem; cursor: pointer;"></i>
+            <div class="card report-card fade-in-up">
+                <div class="report-title">
+                    <h2><i class="fa-solid fa-file-medical"></i> Report for Doctor</h2>
+                    <p>A summary of the recorded activity with the health profile, ready to download or send.</p>
                 </div>
-                <select class="input-field" style="background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                    <option>Last 30 Days</option>
-                    <option>Last 7 Days</option>
-                </select>
-                <h3 style="color: var(--accent-blue); font-size: 1.1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 15px;">Activity Summary</h3>
-                <ul class="report-list">
-                    <li class="hover-scale-subtle"><span>Average visits per day</span> <strong class="text-blue">6</strong></li>
-                    <li class="hover-scale-subtle"><span>Average duration</span> <strong class="text-orange">6 min</strong></li>
-                    <li class="hover-scale-subtle"><span>Longest stay</span> <strong class="text-red">18 min</strong></li>
-                    <li class="hover-scale-subtle"><span>Night visits (avg)</span> <strong class="text-purple">4</strong></li>
-                    <li class="hover-scale-subtle"><span>Total bathroom visits</span> <strong class="text-green">180</strong></li>
-                </ul>
-                <button class="action-btn gradient-blue hover-scale" style="width: 100%; justify-content: center; margin-top: 25px; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);"><i class="fa-solid fa-share-nodes"></i> Share / Download Report</button>
+                <div class="report-form">
+                    <label for="reportProfile">Person
+                        <select id="reportProfile" class="report-input"><option value="">Log in to select a person</option></select>
+                    </label>
+                    <label for="reportPeriod">Period
+                        <select id="reportPeriod" class="report-input" onchange="doctorReport.toggleCustom()">
+                            <option value="7">Last 7 days</option>
+                            <option value="14">Last 14 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="custom">Choose dates…</option>
+                        </select>
+                    </label>
+                    <div id="reportCustom" class="report-custom" hidden>
+                        <label for="reportFrom">From <input type="date" id="reportFrom" class="report-input"></label>
+                        <label for="reportTo">To <input type="date" id="reportTo" class="report-input"></label>
+                    </div>
+                    <button id="btnReportBuild" class="action-btn gradient-blue" onclick="doctorReport.build()"><i class="fa-solid fa-chart-column"></i> Create report</button>
+                </div>
+                <p id="reportMsg" class="report-msg" role="status"></p>
+
+                <div id="reportPreview" class="report-preview"><p class="report-empty">Choose a person and a period, then select <strong>Create report</strong>.</p></div>
+
+                <div class="report-share">
+                    <h3>Send to the doctor</h3>
+                    <div class="report-contact">
+                        <label for="reportDoctorPhone">Doctor's WhatsApp number <input type="tel" id="reportDoctorPhone" class="report-input" placeholder="e.g. 91 98765 43210" autocomplete="off"></label>
+                        <label for="reportDoctorEmail">Doctor's email <input type="email" id="reportDoctorEmail" class="report-input" placeholder="doctor@clinic.in" autocomplete="off"></label>
+                    </div>
+                    <div class="report-actions">
+                        <button id="btnReportPdf" class="report-btn" onclick="doctorReport.download()" disabled><i class="fa-solid fa-file-arrow-down"></i> Download PDF</button>
+                        <button id="btnReportShare" class="report-btn" onclick="doctorReport.share()" disabled hidden><i class="fa-solid fa-share-nodes"></i> Share PDF</button>
+                        <button id="btnReportWhatsApp" class="report-btn report-wa" onclick="doctorReport.whatsapp()" disabled><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
+                        <button id="btnReportEmail" class="report-btn report-mail" onclick="doctorReport.email()" disabled><i class="fa-solid fa-envelope"></i> Email</button>
+                    </div>
+                    <p class="report-hint"><strong>Share PDF</strong> sends the PDF file itself (choose WhatsApp, Gmail or Mail in the list). <strong>WhatsApp</strong> and <strong>Email</strong> open a message with the summary to the number or address above and download the PDF for you to attach. Leave the number or address empty to choose the contact in the app.</p>
+                </div>
             </div>
         </div>
 
@@ -730,10 +754,13 @@
         <div class="nav-item hover-scale" data-target="viewProfile"><div class="nav-icon-wrap"><i class="fa-solid fa-user"></i></div><span>Profiles</span></div>
     </div>
 
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="vendor/jspdf.plugin.autotable.min.js"></script>
     <script src="config.js"></script>
     <script src="vendor/mqtt.min.js"></script>
     <script src="device-link.js"></script>
     <script src="chat.js"></script>
+    <script src="report.js"></script>
     <script src="script.js"></script>
     <script src="timeline.js"></script>
     <script src="sensor.js"></script>

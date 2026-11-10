@@ -203,6 +203,7 @@ const appNav = {
         if(sidebarMenu.classList.contains('open')) toggleSidebar();
         this.hideAllSections();
         document.getElementById('viewDoctorReport').style.display = 'block';
+        doctorReport.open().catch(e => doctorReport.message(e.message || 'The people list could not be loaded.', 'error'));
     },
 
     openAlerts: function() {
