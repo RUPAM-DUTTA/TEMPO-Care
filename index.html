@@ -616,7 +616,7 @@
                 <button type="button" id="timelineRetry" class="chip-action hover-scale" hidden><i class="fa-solid fa-cloud-arrow-up"></i> Retry saving</button>
                 <div id="timelineSetup" class="timeline-setup" hidden>
                     <strong><i class="fa-solid fa-screwdriver-wrench"></i> Administrator setup needed</strong>
-                    <p>The activity table has no person column yet, so readings cannot be saved. Copy the prepared SQL, run it once in the Supabase SQL Editor (project → SQL Editor → New query → Run), then click <em>Retry saving</em>.</p>
+                    <p>The activity table is missing columns (the person column, needed to save readings, or the activity-check columns). Copy the prepared SQL, run it once in the Supabase SQL Editor (project → SQL Editor → New query → Run), then click <em>Retry saving</em>. Running it again is safe.</p>
                     <button type="button" class="chip-action hover-scale" onclick="activityTimeline.copySetup()"><i class="fa-solid fa-copy"></i> Copy setup SQL</button>
                     <p id="timelineSetupMessage" role="status"></p>
                 </div>

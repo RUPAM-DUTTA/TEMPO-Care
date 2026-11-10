@@ -108,6 +108,23 @@ const appDatabase = {
         if (error) { console.error("Log Activity Error:", error.message); throw error; }
         return (data && data[0]) || row;
     },
+    // Family check of one recorded activity (Timeline). kind: 'correct' | 'corrected' | 'rejected' | null (undo).
+    verifyActivity: async function(row, kind, actual) {
+        const ownerId = appState.allowedProfileIds.find(id => String(id) === String(row?.profile_id));
+        if (ownerId === undefined) throw new Error('You can only check activities of people linked to your account.');
+        const original = row.original_activity || row.activity;
+        const changes = kind === null
+            ? { verification: null, activity: original, original_activity: null, verified_by: null, verified_at: null }
+            : { verification: kind, activity: kind === 'corrected' ? actual : original,
+                original_activity: kind === 'corrected' ? original : null,
+                verified_by: appAuth.currentSelectedRole === 'Admin' ? 'Admin' : appAuth.currentUserPhone,
+                verified_at: new Date().toISOString() };
+        const { data, error } = await supabaseClient.from('tempo_activity_log').update(changes)
+            .eq('id', row.id).eq('profile_id', ownerId).select();
+        if (error) { console.error('Verify Activity Error:', error.message); throw error; }
+        if (!data || !data.length) throw new Error('The record was not found or could not be changed.');
+        return data[0];
+    },
     getActivityLogs: async function(limit = 35, profileId) {
         // Data Isolation: only a linked person's records are ever requested from the database.
         const ownerId = appState.allowedProfileIds.find(id => String(id) === String(profileId));

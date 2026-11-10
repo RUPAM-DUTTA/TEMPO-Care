@@ -17,6 +17,11 @@ const activityTimeline = {
     storageKey: null,
     storageError: false,
     dropped: 0,
+    editing: null,          // id of the record whose "what was it actually?" picker is open
+    editChoice: '',
+    checking: new Set(),    // ids being saved
+    checkError: null,
+    CHOICES: ['Entry', 'Exit', 'Walking', 'Standing', 'Sitting', 'Stand_To_Sit', 'Sit_To_Stand', 'No_Person'],
 
     normalize(activity) {
         const names = {
@@ -76,6 +81,7 @@ const activityTimeline = {
         this.storageKey = null;
         this.storageError = false;
         this.dropped = 0;
+        this.editing = null; this.editChoice = ''; this.checking.clear(); this.checkError = null;
         for (const id of ['recordingProfile', 'timelineProfile']) {
             document.getElementById(id)?.replaceChildren(new Option('Log in to select a person', ''));
         }
@@ -103,6 +109,7 @@ const activityTimeline = {
     },
 
     chooseTimeline(value) {
+        this.editing = null; this.editChoice = ''; this.checkError = null;
         this.profileId = this.profiles.some(profile => profile.id === value) ? value : '';
         this.readVersion++;
         this.reading = null;
@@ -161,7 +168,8 @@ const activityTimeline = {
         }
     },
 
-    async refresh() {
+    async refresh(force) {
+        if (this.editing && !force) return;        // do not rebuild the list while a correction is being chosen
         const profileId = this.profileId;
         if (!profileId || !appAuth.currentUserPhone) { this.render(); return; }
         if (this.reading?.profileId === profileId) return;
@@ -192,6 +200,9 @@ const activityTimeline = {
         if (/profile_id/i.test(message) && ['PGRST204', '42703'].includes(error.code)) {
             return 'Database setup is incomplete: the activity table needs its person column. An administrator must run the prepared SQL migration.';
         }
+        if (/verification|original_activity|verified_/i.test(message) && ['PGRST204', '42703'].includes(error.code)) {
+            return 'Activity checks need a one-time database update: the activity table has no check columns yet. An administrator must run the prepared SQL migration.';
+        }
         if (error.code === '42501') return 'The database denied access to activity records. Ask your administrator to check activity permissions.';
         return 'Activity database error: ' + message;
     },
@@ -217,6 +228,7 @@ const activityTimeline = {
             state.className = row.pending ? 'timeline-state pending' : 'timeline-state saved';
             state.textContent = row.pending ? 'Waiting to save' : 'Saved';
             item.append(label, document.createElement('br'), time, document.createElement('br'), state);
+            if (!row.pending) this.renderCheck(item, label, row);
             container.append(item);
         }
         if (!sorted.length) {
@@ -226,7 +238,7 @@ const activityTimeline = {
                 : 'No activity changes recorded for this person yet.';
             container.append(empty);
         }
-        let status = this.errorMessage(this.saveError || this.loadError);
+        let status = this.errorMessage(this.saveError || this.loadError || this.checkError);
         if (this.pending.length) status += ` ${this.pending.length} event(s) waiting to save. Retrying automatically. Keep this browser tab open.`;
         if (this.storageError && this.pending.length) status += ' This browser cannot retain the pending queue across a reload.';
         if (this.dropped) status += ` Buffer full: ${this.dropped} additional change(s) could not be retained.`;
@@ -237,8 +249,96 @@ const activityTimeline = {
             ? 'Select the person using this sensor before recording activities.'
             : status.trim() || (this.lastReceived ? `Receiving data for ${recording.name}. Last received at ${this.lastReceived.toLocaleTimeString()}.`
                 : `Ready to record for ${recording.name}. Connect the sensor to start.`);
-        const setup = /person column/.test(status) && appAuth.currentSelectedRole === 'Admin';
+        const setup = /person column|check columns/.test(status) && appAuth.currentSelectedRole === 'Admin';
         document.getElementById('timelineSetup').hidden = !setup;
+    },
+
+    label(activity) { return String(activity || '').replace(/_/g, ' '); },
+
+    // Correct / Wrong controls under a saved record
+    renderCheck(item, label, row) {
+        const id = String(row.id), busy = this.checking.has(id);
+        const box = document.createElement('div');
+        box.className = 'timeline-check';
+        const button = (text, act, cls, extra = {}) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.className = 'tl-btn ' + (cls || ''); b.textContent = text;
+            b.dataset.act = act; b.dataset.id = id; b.disabled = busy;
+            Object.assign(b, extra);
+            return b;
+        };
+        if (row.verification === 'correct') {
+            item.classList.add('is-correct');
+            const tag = document.createElement('span'); tag.className = 'tl-tag ok'; tag.textContent = '✓ Checked: correct';
+            box.append(tag, button('Undo', 'undo', 'tl-link'));
+        } else if (row.verification === 'corrected') {
+            item.classList.add('is-corrected');
+            const tag = document.createElement('span'); tag.className = 'tl-tag fix';
+            tag.textContent = `✎ Corrected (sensor said ${this.label(row.original_activity)})`;
+            box.append(tag, button('Undo', 'undo', 'tl-link'));
+        } else if (row.verification === 'rejected') {
+            item.classList.add('is-rejected');
+            label.classList.add('tl-struck');
+            const tag = document.createElement('span'); tag.className = 'tl-tag bad'; tag.textContent = '✗ Wrong: nothing happened (left out of reports)';
+            box.append(tag, button('Undo', 'undo', 'tl-link'));
+        } else if (this.editing === id) {
+            const select = document.createElement('select');
+            select.className = 'tl-select'; select.dataset.id = id; select.disabled = busy;
+            select.setAttribute('aria-label', 'What was the activity actually?');
+            select.add(new Option('What was it actually?', ''));
+            this.CHOICES.filter(a => a !== row.activity).forEach(a => select.add(new Option(this.label(a), a)));
+            select.add(new Option('Nothing happened (false detection)', '__none'));
+            select.value = this.editChoice;
+            box.append(select, button('Save', 'save', 'tl-save', { disabled: busy || !this.editChoice }), button('Cancel', 'cancel', 'tl-link'));
+        } else {
+            const q = document.createElement('span'); q.className = 'tl-q'; q.textContent = 'Is this right?';
+            box.append(q, button('✓ Correct', 'correct', 'tl-ok'), button('✗ Wrong', 'wrong', 'tl-bad'));
+        }
+        if (busy) { const s = document.createElement('span'); s.className = 'tl-q'; s.textContent = 'Saving…'; box.append(s); }
+        item.append(box);
+    },
+
+    findRow(id) {
+        return (this.saved.get(this.profileId) || []).find(row => String(row.id) === String(id));
+    },
+
+    async check(id, kind, actual) {
+        const row = this.findRow(id);
+        if (!row || this.checking.has(String(id))) return;
+        this.checking.add(String(id));
+        this.checkError = null;
+        this.render();
+        try {
+            const updated = await appDatabase.verifyActivity(row, kind, actual);
+            const rows = this.saved.get(this.profileId) || [];
+            this.saved.set(this.profileId, rows.map(r => (String(r.id) === String(id) ? { ...r, ...updated } : r)));
+            if (this.editing === String(id)) { this.editing = null; this.editChoice = ''; }
+        } catch (error) {
+            this.checkError = error;
+        } finally {
+            this.checking.delete(String(id));
+            this.render();
+        }
+    },
+
+    onClick(event) {
+        const b = event.target.closest('button[data-act]');
+        if (!b) return;
+        const id = b.dataset.id, act = b.dataset.act;
+        if (act === 'correct') this.check(id, 'correct');
+        else if (act === 'wrong') { this.editing = id; this.editChoice = ''; this.render(); document.querySelector(`.tl-select[data-id="${id}"]`)?.focus(); }
+        else if (act === 'cancel') { this.editing = null; this.editChoice = ''; this.render(); }
+        else if (act === 'save' && this.editChoice) {
+            if (this.editChoice === '__none') this.check(id, 'rejected');
+            else this.check(id, 'corrected', this.editChoice);
+        } else if (act === 'undo') this.check(id, null);
+    },
+
+    onChange(event) {
+        if (!event.target.classList.contains('tl-select')) return;
+        this.editChoice = event.target.value;
+        this.render();
+        document.querySelector(`.tl-select[data-id="${event.target.dataset.id}"]`)?.focus();
     },
 
     async copySetup() {
@@ -252,7 +352,9 @@ const activityTimeline = {
 
 document.getElementById('recordingProfile').addEventListener('change', event => activityTimeline.chooseRecording(event.target.value));
 document.getElementById('timelineProfile').addEventListener('change', event => activityTimeline.chooseTimeline(event.target.value));
-document.getElementById('timelineRefresh').addEventListener('click', () => activityTimeline.refresh());
+document.getElementById('timelineRefresh').addEventListener('click', () => activityTimeline.refresh(true));
+document.getElementById('timelineContainer').addEventListener('click', event => activityTimeline.onClick(event));
+document.getElementById('timelineContainer').addEventListener('change', event => activityTimeline.onChange(event));
 document.getElementById('timelineRetry').addEventListener('click', () => { activityTimeline.flush(); activityTimeline.refresh(); });
 window.addEventListener('online', () => { activityTimeline.flush(); activityTimeline.refresh(); });
 setInterval(() => {

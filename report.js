@@ -60,11 +60,14 @@ const doctorReport = {
     // ------------------------------------------------------------------ data
     async fetchRows(ownerId, start, end) {
         const rows = [];
+        // 'verification' exists once the activity-check migration has run; without it every record counts as unchecked
+        const columns = this.noChecks ? 'id,activity,created_at' : 'id,activity,created_at,verification';
         for (let from = 0; from < this.MAX_ROWS; from += this.PAGE) {
-            const { data, error } = await supabaseClient.from('tempo_activity_log').select('id,activity,created_at')
+            const { data, error } = await supabaseClient.from('tempo_activity_log').select(columns)
                 .eq('profile_id', ownerId).gte('created_at', start.toISOString()).lt('created_at', end.toISOString())
                 .order('created_at', { ascending: true }).range(from, from + this.PAGE - 1);
             if (error) {
+                if (!this.noChecks && /verification/.test(error.message || '')) { this.noChecks = true; return this.fetchRows(ownerId, start, end); }
                 if (/profile_id/.test(error.message || '')) throw new Error('Activity history is not set up yet. An admin must run the Timeline setup SQL once (Timeline → Copy setup SQL → Supabase SQL Editor).');
                 throw new Error('The activity records could not be loaded: ' + error.message);
             }
@@ -76,7 +79,10 @@ const doctorReport = {
 
     // Pure: rows (any order) -> figures for [start, end)
     analyse(rows, start, end) {
-        const events = rows.map(r => ({ at: new Date(r.created_at), activity: this.canonical(r.activity) }))
+        const checks = { correct: 0, corrected: 0, rejected: 0 };
+        rows.forEach(r => { if (checks[r.verification] !== undefined) checks[r.verification]++; });
+        const events = rows.filter(r => r.verification !== 'rejected')   // marked "nothing happened" by the family
+            .map(r => ({ at: new Date(r.created_at), activity: this.canonical(r.activity) }))
             .filter(e => e.activity && !isNaN(e.at) && e.at >= start && e.at < end)
             .sort((a, b) => a.at - b.at);
         const days = [];
@@ -116,7 +122,7 @@ const doctorReport = {
         const nightsCovered = covered.length;   // a night counts when its evening's day has data
         const minutes = stays.map(s => s.minutes);
         return {
-            start, end, days, perDay, events: events.length, byType, stays,
+            start, end, days, perDay, events: events.length, byType, stays, checks,
             covered, missing: days.filter(k => !perDay[k].records),
             entries: sum('entries'), exits: sum('exits'), transitions: sum('transitions'),
             entriesPerDay: covered.length ? sum('entries') / n : null,
@@ -332,7 +338,10 @@ const doctorReport = {
         return `How to read this report: figures come from a radar sensor in the bathroom that records activity changes (Entry, Exit, Sitting, Standing, Walking, sit/stand transitions). ` +
             `An Entry record is a recorded entry event, not a verified complete visit. Night = 22:00–06:00. Averages use only days with records. ` +
             `Time in the room is estimated from an Entry followed by an Exit within ${this.MAX_STAY_MIN} minutes (${cur.stays.length} pairs; ` +
-            `${cur.unpairedEntries} entries without a matching exit were not used). Sensor recognition can be wrong. ` +
+            `${cur.unpairedEntries} entries without a matching exit were not used). Sensor recognition can be wrong` +
+            (cur.checks.correct + cur.checks.corrected + cur.checks.rejected
+                ? `; the family checked ${cur.checks.correct + cur.checks.corrected + cur.checks.rejected} records in the Timeline (${cur.checks.correct} confirmed, ${cur.checks.corrected} corrected and counted as corrected, ${cur.checks.rejected} false detections left out). `
+                : '. ') +
             `This report supports a conversation with a doctor and is not a diagnosis.`;
     },
 
